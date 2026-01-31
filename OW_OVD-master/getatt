@@ -1,0 +1,1168 @@
+
+import json
+import os
+import time
+from openai import OpenAI
+from tqdm import tqdm
+
+# ================= 配置区域 (请修改这里) =================
+
+# 推荐使用 DeepSeek (便宜且逻辑强) 或 Kimi
+# -------------------------------------------------------
+API_KEY = "sk-eeb0b4e780aa4bb8a0447adc0ec0757c"  # 替换为你的 Key
+BASE_URL = "https://api.deepseek.com"  # DeepSeek 地址
+MODEL_NAME = "deepseek-chat"  # 模型名称
+
+# ================= 配置区域 (SiliconFlow - Qwen) =================
+# API_KEY = "sk-47d2b4100ae0457882e91bea8f44bca2"      # 注册 SiliconFlow 获取
+# BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+# MODEL_NAME = "qwen3-max"     # 72B 效果远好于 7B/14B
+
+# 优点：极其便宜（甚至免费），速度极快，指令遵循能力极强。
+# ============================================================
+
+# 如果用 Kimi:
+# BASE_URL = "https://api.moonshot.cn/v1"
+# MODEL_NAME = "moonshot-v1-8k"
+# -------------------------------------------------------
+
+OUTPUT_FILE = "attributes_sowod22.json"
+
+# ================= 完整 80 类映射表 =================
+# 包含 COCO 80 类的 T1-T4 所有类别及其对应的 Super-Class
+CLASS_SUPERCLASS_MAP = {
+    # --- Task 1 (19 classes) ---
+    "airplane": "Vehicle", "bicycle": "Vehicle", "bird": "Animal", "boat": "Vehicle",
+    "bus": "Vehicle", "car": "Vehicle", "cat": "Animal", "cow": "Animal",
+    "dog": "Animal", "horse": "Animal", "motorcycle": "Vehicle", "sheep": "Animal",
+    "train": "Vehicle", "elephant": "Animal", "bear": "Animal", "zebra": "Animal",
+    "giraffe": "Animal", "truck": "Vehicle", "person": "Person",
+
+    # --- Task 2 (21 classes) ---
+    "traffic light": "Outdoor Object", "fire hydrant": "Outdoor Object",
+    "stop sign": "Outdoor Object", "parking meter": "Outdoor Object", "bench": "Furniture",
+    "chair": "Furniture", "dining table": "Furniture", "potted plant": "Furniture",  # COCO context
+    "backpack": "Accessory", "umbrella": "Accessory", "handbag": "Accessory",
+    "tie": "Accessory", "suitcase": "Accessory", "microwave": "Appliance",
+    "oven": "Appliance", "toaster": "Appliance", "sink": "Appliance",
+    "refrigerator": "Appliance", "bed": "Furniture", "toilet": "Furniture", "couch": "Furniture",
+
+    # --- Task 3 (20 classes) ---
+    "frisbee": "Sports Equipment", "skis": "Sports Equipment", "snowboard": "Sports Equipment",
+    "sports ball": "Sports Equipment", "kite": "Sports Equipment", "baseball bat": "Sports Equipment",
+    "baseball glove": "Sports Equipment", "skateboard": "Sports Equipment",
+    "surfboard": "Sports Equipment", "tennis racket": "Sports Equipment",
+    "banana": "Food", "apple": "Food", "sandwich": "Food", "orange": "Food",
+    "broccoli": "Food", "carrot": "Food", "hot dog": "Food", "pizza": "Food",
+    "donut": "Food", "cake": "Food",
+
+    # --- Task 4 (20 classes) ---
+    "laptop": "Electronic", "mouse": "Electronic", "remote": "Electronic",
+    "keyboard": "Electronic", "cell phone": "Electronic", "tv": "Electronic",
+    "book": "Indoor Object", "clock": "Indoor Object", "vase": "Indoor Object",
+    "scissors": "Tool", "teddy bear": "Toy", "hair drier": "Appliance",
+    "toothbrush": "Personal Care", "wine glass": "Kitchenware", "cup": "Kitchenware",
+    "fork": "Kitchenware", "knife": "Kitchenware", "spoon": "Kitchenware",
+    "bowl": "Kitchenware", "bottle": "Container"
+}
+
+# =======================================================
+
+client = OpenAI(api_key=API_KEY, base_url=BASE_URL)
+
+
+# def generate_prompt(class_name, super_class):
+#     """
+#     终极优化版 Prompt: 包含 10 维度检查清单、对比思维和严格格式控制
+#     """
+#     return f"""
+# I need you to generate a JSON dataset of visual attributes for an Open-World Object Detection task.
+#
+# Target Object: "{class_name}"
+# Super-Class Context: This object is a type of **{super_class}**.
+#
+# Goal: Generate 25 distinct, non-repetitive attributes strictly following the "object which..." format.
+#
+# Strategy: Maximize Discriminative Power
+# 1. Contrastive Thinking: Before writing, think: "What makes a {class_name} visually different from other {super_class}s?". Focus on these unique traits.
+# 2. Dimension Checklist: Iterate through these 10 dimensions. AIM TO COVER AS MANY AS APPLICABLE:
+#    - Shape, Color (only if fixed), Texture, Size (relative), Context, Features, Appearance, Behavior, Environment, Material.
+#
+# Formatting Rules (Strict):
+# 1. Prefix: Every line MUST start with "object which...".
+# 2. Structural Phrasing: Use specific nouns after "which" (e.g., "object which surface texture is...", "object which component has...").
+# 3. No Redundancy: Do not describe the exact same feature twice using different words.
+# 4. Accuracy: Attributes must be true for ALL or NEARLY ALL instances.
+#
+# Output Format: Provide ONLY a raw JSON object:
+# {{
+#   "{class_name}": [
+#     "object which [component/feature] [verb] [description]",
+#     ... (total 25 lines)
+#   ]
+# }}
+# """
+
+
+# u-RECALL=
+# def generate_prompt(class_name, super_class):
+#     """
+#     终极优化版 Prompt: 包含 10 维度检查清单、对比思维和严格格式控制
+#     """
+#     return f"""
+# I need you to generate a JSON dataset of visual attributes for an Open-World Object Detection task.
+#
+# Target Object: "{class_name}"
+# Super-Class Context: This object is a type of **{super_class}**.
+#
+# Goal: Generate exactly 25 distinct, non-repetitive attributes strictly following the "object which..." format.
+#
+# Strategy: To ensure 25 unique attributes, cover these specific visual dimensions:
+# 1. Global Shape & Geometry (e.g., rectangular, spherical, elongated)
+# 2. Component Parts & Structure (e.g., handles, legs, wheels, screen, bezel)
+# 3. Surface Material & Texture (e.g., metallic, wooden, furry, smooth, rough)
+# 4. Color Patterns (if applicable/common)
+# 5. Relative Size & Scale
+# 6. Typical Environmental Context (where it is visually found)
+#
+# Formatting Rules (Strict):
+# 1. Prefix: Every line MUST start with "object which...".
+# 2. Content: Focus on VISIBLE traits. Avoid abstract functions (e.g., avoid "object which is used to call people", use "object which has a numeric keypad or screen").
+# 3. Count: Exactly 25 lines.
+# 4. No Repetition: Each line must describe a different feature or aspect.
+#
+# Output Format: Provide ONLY a raw JSON object:
+# {{
+#   "{class_name}": [
+#     "object which [description of shape/geometry]",
+#     "object which [description of material/texture]",
+#     "object which [description of specific component 1]",
+#     "object which [description of specific component 2]",
+#     ... (continue until exactly 25 lines)
+#   ]
+# }}
+# """
+
+
+# # U-RECALL=61
+# def generate_prompt(class_name, super_class):
+#     """
+#     终极优化版 Prompt: 包含 10 维度检查清单、对比思维和严格格式控制
+#     """
+#     return f"""
+# You are an expert Computer Vision Data Annotator specializing in Open-World Object Detection.
+# Task: Generate a dataset of visual attributes for the target object: "{class_name}" (Super-class: {super_class}).
+#
+# Goal: Generate exactly 25 distinct, discriminative visual attributes.
+# Format: Return a JSON object where every line MUST start with the prefix "object which ".
+#
+# ### REFERENCE DIMENSIONS (Mental Checklist):
+# Use the following 10 dimensions (derived from visual datasets) as a source of inspiration to ensure diversity. You do not need to use all of them equally, but use them to avoid repetition:
+# 1.  **Shape** (Geometry, silhouette)
+# 2.  **Color** (Dominant colors, patterns)
+# 3.  **Texture** (Surface quality, finish)
+# 4.  **Size** (Relative scale)
+# 5.  **Material** (Composition)
+# 6.  **Features** (Visible components, parts)
+# 7.  **Appearance** (Style, condition, aesthetics)
+# 8.  **Behavior** (Visual states/poses. E.g., NOT "used to cut", but "object which is held in a hand")
+# 9.  **Context** (Immediate surroundings)
+# 10. **Environment** (Typical background scenes)
+#
+# ### EXAMPLES (How to use the dimensions naturally):
+#
+# **Example Target: "Zebra" (Animal)**
+# *Notice how this focuses on Pattern (Color), Features, and Environment:*
+# - "object which features a distinctive black and white striped pattern"
+# - "object which has a short, stiff mane running down the back of the neck"
+# - "object which has a muzzle that is typically dark or black"
+# - "object which stands on four slender legs ending in hooves"
+# - "object which is often visually grouped in a herd"
+# - "object which is typically found in grassland or savanna backgrounds"
+#
+# **Example Target: "Coffee Mug" (Container)**
+# *Notice how this focuses on Shape, Material, and Visual State (Behavior):*
+# - "object which has a cylindrical body with an open top"
+# - "object which features a C-shaped handle attached to the side"
+# - "object which has a smooth, often glossy ceramic or porcelain surface"
+# - "object which may contain dark liquid or steam rising from the top"
+# - "object which is often seen resting on a coaster or saucer"
+# - "object which is typically held by the handle in a human hand"
+#
+# ### YOUR TASK:
+# Generate 25 attributes for **"{class_name}"**.
+# 1. **Mix & Match:** Freely combine dimensions.
+# 2. **Visual Only:** Describe what is SEEN.
+# 3. **No Repetition:** Each line must be unique.
+#
+# ### OUTPUT:
+# {{
+#   "{class_name}": [
+#     "object which ...",
+#     ... (generate exactly 25 lines)
+#   ]
+# }}
+# """
+
+
+# U-RECALL=63
+# def generate_prompt(class_name, super_class):
+#     """
+#     终极优化版 Prompt: 包含 10 维度检查清单、对比思维和严格格式控制
+#     """
+#     return f"""
+# You are an expert Computer Vision Data Annotator specializing in Open-World Object Detection (OW-OVD).
+# Your goal is to generate high-quality visual descriptions that help a CLIP-based model detect and classify the object: "{class_name}".
+# Super-Class Context: This object is a subtype of **{super_class}**.
+#
+# ### TASK OBJECTIVE
+# Generate exactly **25 distinct visual attributes** strictly following the format "object which...".
+#
+# ### CRITICAL STRATEGY (To improve Unknown Recall & Accuracy)
+# To fix detection gaps, you must balance two types of attributes:
+# 1.  **Geometric/Structural (for Detection):** Attributes describing 3D shape, boundaries, and physical presence (helping the model distinguish "object" from "background").
+# 2.  **Discriminative/Fine-grained (for Classification):** Attributes describing unique textures, patterns, and parts (helping distinguish "{class_name}" from other classes).
+#
+# ### REFERENCE FRAMEWORK (10 Dimensions)
+# Use these 10 dimensions as a checklist to ensure diversity. Do not fixate on just one.
+# 1.  **Shape:** (Geometric form, silhouette, contours. *Vital for detection*)
+# 2.  **Color:** (Dominant hues, specific color patterns)
+# 3.  **Texture:** (Surface finish, tactile quality)
+# 4.  **Size:** (Relative scale, proportions)
+# 5.  **Material:** (Physical composition like metal, fur, glass)
+# 6.  **Features:** (Distinct parts: wheels, legs, handles, screens)
+# 7.  **Appearance:** (Style, condition, aesthetics)
+# 8.  **Behavior (Visual State):** (Visible poses or states. E.g., "object which is standing", "object which is emitting light". *NO abstract functions like "used to call".*)
+# 9.  **Context:** (Immediate surroundings or attachments)
+# 10. **Environment:** (Typical scenes where it appears)
+#
+# ### STRICT CONSTRAINTS
+# 1.  **Prefix:** Every line MUST start with "object which ".
+# 2.  **Visual Only:** Describe what is SEEN.
+#     - *Bad:* "object which is expensive" (Cannot see price)
+#     - *Good:* "object which has a glossy, polished gold finish" (Visible)
+# 3.  **No Repetition:** Do not say the same thing in different words.
+# 4.  **Format:** Return ONLY a raw JSON object.
+#
+# ### FEW-SHOT EXAMPLES
+#
+# **Target: "Zebra" (Animal)**
+# *[Focus: Pattern, Features, Environment]*
+# - "object which features a high-contrast black and white striped pattern"
+# - "object which has a short, stiff mane running along the neck"
+# - "object which stands on four legs ending in solid hooves"
+# - "object which has an elongated muzzle with a dark nose"
+# - "object which is typically seen in a herd in a grassy savanna"
+#
+# **Target: "Coffee Mug" (Container)**
+# *[Focus: Shape, Material, State - Notice the structural descriptions]*
+# - "object which has a hollow cylindrical body with an open top"
+# - "object which features a curved C-shaped handle on the side"
+# - "object which has a solid, flat base that rests on a surface"
+# - "object which is made of opaque ceramic or glass material"
+# - "object which is often visually associated with steam or liquid inside"
+#
+# ### OUTPUT GENERATION
+# Target Object: "{class_name}"
+# Output JSON:
+# {{
+#   "{class_name}": [
+#     "object which ...",
+#     "object which ...",
+#     ... (Generate exactly 25 lines)
+#   ]
+# }}
+#
+# """
+
+
+# def generate_prompt(class_name, super_class):
+#     """
+#     终极优化版 Prompt: 包含 10 维度检查清单、对比思维和严格格式控制
+#     """
+#     return f"""
+# You are an expert Computer Vision Data Annotator specializing in Open-World Object Detection.
+# Task: Generate a dataset of visual attributes for the target object: "{class_name}" (Super-class: {super_class}).
+#
+# Goal: Generate exactly 25 distinct, discriminative visual attributes.
+# Format: Return a JSON object where every line MUST start with the prefix "object which ".
+#
+# ### REFERENCE DIMENSIONS (Mental Checklist):
+# Use the following 10 dimensions (derived from visual datasets) as a source of inspiration to ensure diversity. You do not need to use all of them equally, but use them to avoid repetition:
+# 1.  **Shape** (Geometry, silhouette)
+# 2.  **Color** (Dominant colors, patterns)
+# 3.  **Texture** (Surface quality, finish)
+# 4.  **Size** (Relative scale)
+# 5.  **Material** (Composition)
+# 6.  **Features** (Visible components, parts)
+# 7.  **Appearance** (Style, condition, aesthetics)
+# 8.  **Behavior** (Visual states/poses. E.g., NOT "used to cut", but "object which is held in a hand")
+# 9.  **Context** (Immediate surroundings)
+# 10. **Environment** (Typical background scenes)
+#
+# ### NEGATIVE CONSTRAINTS (CRITICAL):
+# To ensure the attributes are usable by a vision model (CLIP), you must AVOID the following:
+# 1.  **No Abstract Functions:** Do not write "object which is used for cooking". (Instead, write "object which contains food ingredients").
+# 2.  **No Subjective Opinions:** Do not write "object which is beautiful/popular/useful".
+# 3.  **No Invisible Traits:** Do not mention price, history, or sound.
+# 4.  **No Generic Fillers:** Avoid empty phrases like "object which is a physical object".
+#
+# ### EXAMPLES (How to use the dimensions naturally):
+#
+# **Example Target: "Zebra" (Animal)**
+# *Notice how this focuses on Pattern (Color), Features, and Environment:*
+# - "object which features a distinctive black and white striped pattern"
+# - "object which has a short, stiff mane running down the back of the neck"
+# - "object which has a muzzle that is typically dark or black"
+# - "object which stands on four slender legs ending in hooves"
+# - "object which is often visually grouped in a herd"
+# - "object which is typically found in grassland or savanna backgrounds"
+#
+# **Example Target: "Coffee Mug" (Container)**
+# *Notice how this focuses on Shape, Material, and Visual State (Behavior):*
+# - "object which has a cylindrical body with an open top"
+# - "object which features a C-shaped handle attached to the side"
+# - "object which has a smooth, often glossy ceramic or porcelain surface"
+# - "object which may contain dark liquid or steam rising from the top"
+# - "object which is often seen resting on a coaster or saucer"
+# - "object which is typically held by the handle in a human hand"
+#
+# ### YOUR TASK:
+# Generate 25 attributes for **"{class_name}"**.
+# 1. **Mix & Match:** Freely combine dimensions to describe the object visually.
+# 2. **Visual Focus:** Ensure every attribute describes something visible in a photograph.
+# 3. **No Repetition:** Each line must be unique.
+#
+# ### OUTPUT:
+# {{
+#   "{class_name}": [
+#     "object which ...",
+#     ... (generate exactly 25 lines)
+#   ]
+# }}
+# """
+
+# # 10
+# def generate_prompt(class_name, super_class):
+#     """
+#     Open-World Object Detection 专用 Prompt
+#     优化点：增加生成数量冗余，强化视觉排他性，保留负面约束
+#     """
+#     return f"""
+# You are an expert Computer Vision Data Annotator specializing in Open-World Object Detection.
+# Task: Generate a dataset of visual attributes for the target object: "{class_name}" (Super-class: {super_class}).
+#
+# Goal: Generate **30** distinct, discriminative visual attributes. (I will select the best 25).
+# Format: Return a JSON object where every line MUST start with the prefix "object which ".
+#
+# ### STRATEGY: VISUAL DISCRIMINATION
+# When describing "{class_name}", ask yourself: **"If I crop this object out of an image, what visual details prove it is a {class_name} and NOT a similar {super_class}?"**
+#
+# ### REFERENCE DIMENSIONS (Mental Checklist):
+# Iterate through these dimensions to ensure diversity:
+# 1.  **Shape & Geometry** (e.g., cylindrical, rectangular, spherical)
+# 2.  **Parts & Components** (e.g., handles, legs, wheels, screens, buttons)
+# 3.  **Material & Surface** (e.g., metallic, wooden, furry, transparent glass)
+# 4.  **Color & Pattern** (e.g., striped, solid red, metallic silver)
+# 5.  **State & Pose** (e.g., standing upright, coiled, open, closed)
+# 6.  **Context & Affordance** (e.g., object which is held in a hand, object which rests on a table)
+#
+# ### ⛔ NEGATIVE CONSTRAINTS (STRICT):
+# To ensure the attributes work with CLIP vision models:
+# 1.  **NO Functions:** DO NOT write "used for cooking/cleaning". WRITE "has a blade/bristles".
+# 2.  **NO Intangibles:** DO NOT mention price, popularity, sound, or smell.
+# 3.  **NO Subjectivity:** DO NOT use words like "beautiful", "ugly", "nice".
+# 4.  **NO Generic Fillers:** DO NOT write "object which is a 3D object".
+#
+# ### EXAMPLES:
+#
+# **Target: "Zebra"**
+# - "object which features a high-contrast black and white striped pattern"
+# - "object which has a short, stiff mane running down the neck"
+# - "object which stands on four slender legs ending in solid hooves"
+# - "object which has an elongated muzzle with a dark nose"
+#
+# **Target: "Coffee Mug"**
+# - "object which has a hollow cylindrical body with an open top"
+# - "object which features a C-shaped handle attached to the side"
+# - "object which has a smooth, glossy ceramic or porcelain surface"
+# - "object which is often seen containing dark liquid or steam"
+#
+# ### YOUR TASK:
+# Generate 30 attributes for **"{class_name}"**.
+# Output JSON Format:
+# {{
+#   "{class_name}": [
+#     "object which ...",
+#     ... (generate 30 lines)
+#   ]
+# }}
+# """
+#
+
+
+# #9
+# def generate_prompt(class_name, super_class):
+#     """
+#     [终极优化版] Open-World OVD 专用 Prompt
+#     优化策略:
+#     1. 保留 Super-Class 以消除歧义 (解决 Mouse/Bat 等多义词问题)。
+#     2. 强制 "Fundamental Description" (即使是车也要描述有轮子)。
+#     3. 增加 "Negative Constraints" (严禁功能性描述，专攻视觉特征)。
+#     4. 请求 30 条数据 (冗余生成)，在 Python 端截取前 25 条，防止数量不足。
+#     """
+#     return f"""
+# You are an expert Computer Vision Data Annotator specializing in Open-World Object Detection.
+# Task: Generate a dataset of visual attributes for the target object: "{class_name}" (Super-class context: {super_class}).
+#
+# Goal: Generate **30** distinct, discriminative visual attributes.
+# Format: Return a JSON object where every line MUST start with the prefix "object which ".
+#
+# ### 🧠 STRATEGY: VISUAL DISCRIMINATION
+# Imagine you are describing this object to a person who has never seen it, but knows what a "{super_class}" is.
+# 1. **Disambiguation:** Use the super-class to know WHICH meaning of the word to describe (e.g., if target is "Mouse" and super-class is "Electronic", describe the device, not the animal).
+# 2. **Fundamental Traits:** Do NOT assume basic traits are obvious. Even if it is a "Vehicle", you MUST explicitly write "object which has wheels".
+# 3. **Part-Whole Focus:** Describe specific visible components (screens, handles, legs, buttons).
+#
+# ### 📝 REFERENCE DIMENSIONS (Use these to ensure diversity):
+# 1.  **Shape & Geometry** (e.g., cylindrical, rectangular, spherical, flat)
+# 2.  **Parts & Components** (e.g., handles, legs, wheels, screens, buttons, bezel)
+# 3.  **Material & Surface** (e.g., metallic, wooden, furry, transparent glass, plastic)
+# 4.  **Color & Pattern** (e.g., striped, solid red, metallic silver, multicolor)
+# 5.  **State & Pose** (e.g., standing upright, coiled, open, closed, hanging)
+# 6.  **Context** (e.g., "object which is held in a hand", "object which is attached to a ceiling")
+#
+# ### ⛔ NEGATIVE CONSTRAINTS (CRITICAL - DO NOT IGNORE):
+# To ensure the attributes work with CLIP vision models, you must follow these rules:
+# 1.  **NO Abstract Functions:** DO NOT write "object which is used for cooking". (Instead, write "object which contains food ingredients" or "object which has a metal surface").
+# 2.  **NO Subjective Opinions:** DO NOT write "beautiful", "popular", "useful", "expensive".
+# 3.  **NO Invisible Traits:** DO NOT mention history, price, smell, or origin.
+# 4.  **NO Generic Fillers:** DO NOT write "object which is a physical object".
+#
+# ### 💡 EXAMPLES:
+#
+# **Target: "Zebra" (Animal)**
+# *Notice: Focus on visual pattern, body parts, and pose.*
+# - "object which features a high-contrast black and white striped pattern"
+# - "object which has a short, stiff mane running down the neck"
+# - "object which stands on four slender legs ending in solid hooves"
+# - "object which has an elongated muzzle with a dark nose"
+# - "object which is typically found in grassland or savanna backgrounds"
+#
+# **Target: "Computer Mouse" (Electronic)**
+# *Notice: Focus on shape, buttons, and material.*
+# - "object which has a small, palm-sized ergonomic shape"
+# - "object which features left and right clickable buttons on the top"
+# - "object which has a scroll wheel located between the buttons"
+# - "object which is connected to a computer via a cord or wireless receiver"
+# - "object which typically rests on a flat mousepad surface"
+#
+# ### YOUR TASK:
+# Generate 30 visual attributes for **"{class_name}"**.
+# Output strictly valid JSON:
+# {{
+#   "{class_name}": [
+#     "object which ...",
+#     ... (generate 30 lines)
+#   ]
+# }}
+# """
+
+
+# # 11
+# def generate_prompt(class_name, super_class):
+#     """
+#     [OW-OVD FINAL PROMPT — Unknown Recall Optimized]
+#     Key Enhancements:
+#     1. Super-class disambiguation
+#     2. Mandatory fundamental traits (objectness)
+#     3. Boundary & integrity modeling
+#     4. Non-background bias
+#     5. Small-object scale robustness
+#     6. 30→25 redundancy for stability
+#     """
+#     return f"""
+# You are an expert Computer Vision Data Annotator specializing in Open-World Object Detection.
+#
+# Target Object: "{class_name}"
+# Super-Class Context: This object is a type of "{super_class}".
+#
+# Your job is to generate visual attributes that help a CLIP-based OW-OVD model
+# recognize this object even when the class is unseen during training.
+#
+# ----------------------------------------------------------------------
+# GOAL
+# Generate **30 distinct visual attributes** describing the target object.
+# Each line MUST start with the prefix:
+#
+#     object which ...
+#
+# Output must be strictly valid JSON.
+# ----------------------------------------------------------------------
+#
+# 🧠 STRATEGY — THINK LIKE A DETECTOR, NOT A CLASSIFIER
+#
+# 1. **Disambiguation**
+#    Use the super-class to choose the correct meaning of the word.
+#    (e.g., "mouse" as an electronic device, not an animal.)
+#
+# 2. **Fundamental Objectness**
+#    Never assume basic traits are obvious.
+#    Even for vehicles, explicitly say "object which has wheels", etc.
+#
+# 3. **Part–Whole Modeling**
+#    Prefer concrete, visible parts: screens, buttons, handles, legs, edges.
+#
+# 4. **Boundary Awareness (CRITICAL)**
+#    At least **3 attributes** must describe that this is a closed, self-contained
+#    physical object separated from the background, e.g.:
+#    - object which has a continuous outer boundary
+#    - object which encloses internal components within a solid shell
+#    - object which forms a compact closed silhouette
+#
+# 5. **Non-Background Bias**
+#    At least **3 attributes** must describe properties that never apply to
+#    amorphous background regions, e.g.:
+#    - object which casts a compact localized shadow
+#    - object which can be fully circled by a bounding box
+#
+# 6. **Scale Robustness**
+#    At least **3 attributes** must remain valid even when the object occupies
+#    less than 2% of the image area, e.g.:
+#    - object which appears as a dense cluster of edges when viewed from far away
+#    - object which reduces to a small rigid silhouette at long distance
+#
+# ----------------------------------------------------------------------
+# REFERENCE DIMENSIONS — USE AS CHECKLIST
+#
+# A. Shape & Geometry        (rectangular, cylindrical, flat, elongated)
+# B. Parts & Components     (handles, wheels, legs, buttons, bezels)
+# C. Material & Surface     (plastic, metal, glass, fur, matte, glossy)
+# D. Color & Pattern        (striped, uniform, metallic sheen)
+# E. State & Pose           (open, closed, upright, folded)
+# F. Boundary & Integrity   (closed shell, continuous outline, rigid enclosure)
+# G. Context (Visual only)  (mounted, attached, resting — no functions)
+#
+# ----------------------------------------------------------------------
+# ⛔ NEGATIVE CONSTRAINTS (MUST FOLLOW)
+#
+# • NO abstract functions (no "used for", no purpose).
+# • NO subjective words (no beautiful, useful, popular).
+# • NO invisible traits (no price, sound, smell, origin).
+# • NO dependency on other objects (do NOT rely on hands, people, tables).
+# • NO generic fillers ("object which is a thing").
+#
+# ----------------------------------------------------------------------
+# OUTPUT FORMAT (STRICT JSON ONLY)
+#
+# {{
+#   "{class_name}": [
+#     "object which ...",
+#     ...
+#     (generate exactly 30 lines)
+#   ]
+# }}
+# """
+
+
+
+# # 12
+# def generate_prompt(class_name, super_class):
+#     """
+#     [U-RECALL=66+  Minimal Objectness Injection Version]
+#     在保持语义自然分布的前提下，引入少量物理结构描述以提升 unknown recall。
+#     """
+#     return f"""
+# You are an expert Computer Vision Data Annotator specializing in Open-World Object Detection.
+# Task: Generate a dataset of visual attributes for the target object: "{class_name}" (Super-class: {super_class}).
+#
+# Goal: Generate exactly 25 distinct, discriminative visual attributes.
+# Format: Return a JSON object where every line MUST start with the prefix "object which ".
+#
+# ### ADDITIONAL CONSTRAINT (VERY IMPORTANT)
+# Among the 25 attributes, at least **3** must explicitly describe **visible physical structure**
+# such as edges, outline, rigid shape, or enclosed body — but keep the language **natural**.
+#
+# ### REFERENCE DIMENSIONS (Mental Checklist):
+# Use the following 10 dimensions as inspiration to ensure diversity:
+# 1. **Shape** (geometry, silhouette)
+# 2. **Color** (dominant colors, patterns)
+# 3. **Texture** (surface finish)
+# 4. **Size** (relative scale)
+# 5. **Material** (composition)
+# 6. **Features** (visible components or parts)
+# 7. **Appearance** (style, condition)
+# 8. **Behavior** (visual states/poses, e.g., "object which is held in a hand")
+# 9. **Context** (immediate surroundings)
+# 10. **Environment** (typical background scenes)
+#
+# ### EXAMPLES
+#
+# **Example Target: "Zebra" (Animal)**
+# - "object which features a distinctive black and white striped pattern"
+# - "object which has a short, stiff mane running down the back of the neck"
+# - "object which has a muzzle that is typically dark or black"
+# - "object which stands on four slender legs ending in hooves"
+# - "object which is often visually grouped in a herd"
+# - "object which is typically found in grassland or savanna backgrounds"
+#
+# **Example Target: "Coffee Mug" (Container)**
+# - "object which has a cylindrical body with an open top"
+# - "object which features a C-shaped handle attached to the side"
+# - "object which has a smooth, often glossy ceramic or porcelain surface"
+# - "object which may contain dark liquid or steam rising from the top"
+# - "object which is often seen resting on a coaster or saucer"
+# - "object which is typically held by the handle in a human hand"
+#
+# ### YOUR TASK
+# Generate 25 attributes for **"{class_name}"**.
+# 1. Mix and match dimensions freely.
+# 2. Describe only what is visually observable.
+# 3. Avoid repeating the same idea.
+#
+# ### OUTPUT
+# {{
+#   "{class_name}": [
+#     "object which ...",
+#     ... (generate exactly 25 lines)
+#   ]
+# }}
+# """
+
+
+# # 14
+# def generate_prompt(class_name, super_class):
+#     """
+#     通用性优化版 (High Generalization):
+#     旨在提取该类别的“原型特征” (Prototypical Features)，
+#     忽略特定颜色、风格或罕见变体，确保能召回各种长相的该类物体。
+#     """
+#     return f"""
+# Role: Visual Ontology Expert.
+# Task: Define the "Universal Visual Prototype" for the object: "{class_name}" (Super-type: {super_class}).
+#
+# Goal: Generate 25 attributes that are true for **ALMOST EVERY** instance of this object, regardless of style, color, or brand.
+# Format: JSON only. Each line starts with "object which ".
+#
+# ### 🧠 STRATEGY: "INVARIANT FEATURES" (The Common Denominator)
+# Ask yourself: "If I change the color, is it still a {class_name}? If I put it in a different room, is it still a {class_name}?"
+# - Focus on **Structural Parts** (legs, wheels, screen, handle).
+# - Focus on **Geometric Form** (cylindrical, rectangular, flat).
+# - Focus on **Material Texture** ONLY if it never changes (e.g., tires are always rubber/black).
+#
+# ### ⛔ NEGATIVE CONSTRAINTS (Avoid Over-fitting):
+# 1. **NO Specific Colors:** Unless the object implies the color (like "Lemon" is yellow). Do NOT say "object which is red" for a Car.
+# 2. **NO Specific Context:** Do not say "found in a kitchen" if it can also be in a dining room. Use broad terms like "resting on a surface".
+# 3. **NO Rare Variants:** Do not describe a "convertible car" specifically, describe a "car" generally.
+#
+# ### EXAMPLES (General vs. Specific):
+#
+# **Target: "Chair"**
+# [BAD - Too Specific]: "object which has a padded red velvet seat", "object which is placed next to a desk"
+# [GOOD - General]: "object which has a horizontal seat surface", "object which features a backrest for support", "object which stands on legs or a central base", "object which has a rigid frame"
+#
+# **Target: "Dog"**
+# [BAD - Too Specific]: "object which has golden fur", "object which has floppy ears" (some have pointy ears!)
+# [GOOD - General]: "object which has a snout with a nose", "object which stands on four legs with paws", "object which has a fur-covered body", "object which features two eyes and ears on the head"
+#
+# ### YOUR TASK (For "{class_name}"):
+# Generate 25 universally valid attributes.
+# {{
+#   "{class_name}": [
+#     ...
+#   ]
+# }}
+# """
+
+
+# # 15
+# def generate_prompt(class_name, super_class):
+#     """
+#     Prototype+Semantic Anchor Hybrid (OW-OVD Optimized - v3)
+#     保持 25 条覆盖空间密度，同时避免 hallucination。
+#     """
+#     return f"""
+# Role: Visual Ontology Expert for Open-World Object Detection.
+# Task: Define the "Universal Visual Prototype" for the object: "{class_name}" which belongs to the category: "{super_class}".
+#
+# Goal: Generate exactly **25** visual attributes.
+# These attributes must jointly span the visual appearance space of "{class_name}"
+# and be discriminative from other objects in "{super_class}".
+#
+# Format: JSON only. A list of 25 strings under key "{class_name}".
+# Each string must start with: "object which ".
+#
+# ### 🧠 STRATEGY: HIGH-COVERAGE VISUAL SPAN
+# Ensure attributes jointly cover:
+# 1. Structure & Shape
+# 2. Key Parts & Layout
+# 3. Material & Surface
+# 4. Typical Pose / Visual State
+# 5. Broad Contextual Anchor
+# 6. Size & Proportion (relative)
+# 7. Visual Interaction with Humans or Objects
+# 8. Boundary / Outline Cues
+# 9. Multi-view Cues (front / side / top)
+# 10. Appearance Variability
+#
+# ### ⛔ NEGATIVE CONSTRAINTS
+# - No invisible traits.
+# - No rare variants.
+# - No abstract functions.
+# - Avoid color unless it is structurally implied.
+#
+# ### YOUR TASK (For "{class_name}"):
+# Generate 25 attributes.
+# {{
+#   "{class_name}": [
+#     "object which ...",
+#     ...
+#   ]
+# }}
+# """
+
+
+# # 16
+# def generate_prompt(class_name, super_class):
+#     """
+#     OW-OVD Prompt (v5 - Hierarchical Visual Pyramid)
+#     策略调整：
+#     1. 显式包含父类通用特征 (Anchor Traits) 以保证基础召回率。
+#     2. 结合细粒度特征 (Specific Traits) 以保证区分度。
+#     3. 严格凑满 25 条，通过从整体到局部的层级扫描。
+#     """
+#     return f"""
+# Role: Visual Recognition Expert specializing in Ontology-based Object Detection.
+# Task: Describe the visual appearance of "{class_name}" (Category: "{super_class}") for an Open-World Detector.
+#
+# Goal: Generate exactly **25** visual attribute strings.
+# Format: JSON list under key "{class_name}".
+# Prefix: Every string MUST start with "object which ".
+#
+# ### 🧬 STRATEGY: HIERARCHICAL VISUAL PYRAMID
+# To reach 25 attributes, you must cover the object from "General" to "Specific".
+# Do NOT suppress generic features inherited from "{super_class}".
+#
+# **Phase 1: General/Inherited Traits (Approx. 5-8 attributes)**
+# - Describe features "{class_name}" shares with typical "{super_class}".
+# - Mention common materials (e.g., metal, plastic, fur).
+# - Mention general structural forms (e.g., boxy, cylindrical, organic shape).
+# - Mention visible distinct parts common to the category (e.g., legs, wheels, handles).
+#
+# **Phase 2: Specific/Discriminative Traits (Approx. 10-12 attributes)**
+# - What makes "{class_name}" different from other "{super_class}"?
+# - Specific aspect ratios or relative sizes.
+# - Distinctive colors or patterns usually associated with this class.
+# - Unique sub-parts or configurations.
+#
+# **Phase 3: Fine-Grained Details (Remaining attributes)**
+# - Zoom in on textures (rough, shiny, matte).
+# - Describe edge/boundary characteristics.
+# - Describe geometric details of specific parts.
+#
+# ### ⛔ NEGATIVE CONSTRAINTS
+# - No abstract uses (e.g., "used for cooking"). Focus on "has a flat heated surface".
+# - No invisible internal components.
+# - No rare/abnormal variants (focus on the prototype).
+# - No repetitive synonyms (e.g., don't just say "large" and "big" as two separate traits, use nuances).
+#
+# ### OUTPUT TEMPLATE (JSON ONLY)
+# {{
+#   "{class_name}": [
+#     "object which [General Trait 1 - e.g., is made of metal]",
+#     "object which [General Trait 2 - e.g., has a four-legged structure]",
+#     ...
+#     "object which [Specific Trait 1]",
+#     ...
+#     "object which [Fine Detail 1]"
+#   ]
+# }}
+# """
+
+# # 18 17
+# def generate_prompt(class_name, super_class):
+#     """
+#     [V17 - Hybrid of #9 and #11]
+#     融合了 #9 的强判别性 (Discrimination) 和 #11 的物体性 (Objectness)。
+#     专门针对 CLIP-based Open-World Detection 优化。
+#     """
+#     return f"""
+# You are an expert Computer Vision Data Generator for an Open-World Object Detection model (OW-OVD).
+# Target Object: "{class_name}"
+# Super-Class Context: This object is a subtype of "{super_class}".
+#
+# ### MISSION
+# Generate exactly **30** distinct visual attributes.
+# (I will strictly select the best 25, so provide high-quality candidates).
+#
+# ### 🧠 CORE STRATEGY: "Discriminative Objectness"
+# Combine two ways of seeing:
+# 1.  **For Detection (Objectness - from Prompt #11):** Describe the object's physical boundaries. How does it separate from the background? (e.g., "object which has a rigid, continuous outline", "object which casts a specific shadow").
+# 2.  **For Classification (Discrimination - from Prompt #9):** Describe distinct parts and textures that differentiate it from other {super_class}s.
+#
+# ### 📝 ATTRIBUTE CHECKLIST (Ensure diversity):
+# * **Geometry & Shape:** (e.g., cylindrical, boxy, flat, spherical).
+# * **Visible Parts:** (e.g., handles, screens, legs, buttons, wheels).
+# * **Material & Texture:** (e.g., metallic, furry, transparent, wooden).
+# * **Physical Boundary:** (e.g., "object which occupies a compact volume", "object which has a defined silhouette").
+# * **Visual State:** (e.g., open/closed, standing/resting).
+#
+# ### ⛔ STRICT NEGATIVE CONSTRAINTS (CRITICAL):
+# To ensure high performance with CLIP:
+# 1.  **NO Abstract Functions:** NEVER write "used for cooking". WRITE "has a surface for holding food".
+# 2.  **NO Intangible Traits:** DO NOT mention price, origin, sound, or smell.
+# 3.  **NO Subjective Words:** DO NOT use "beautiful", "scary", "nice".
+# 4.  **NO Generic Fillers:** DO NOT write "object which is visible".
+#
+# ### OUTPUT FORMAT
+# Return ONLY a valid JSON object.
+# Every line MUST start with "object which ".
+#
+# {{
+#   "{class_name}": [
+#     "object which [Detection/Structure trait...]",
+#     "object which [Discriminative Part trait...]",
+#     "object which [Material/Texture trait...]",
+#     ...
+#     (Generate exactly 30 lines)
+#   ]
+# }}
+# """
+
+
+
+# # 19
+# def generate_prompt(class_name, super_class):
+#     """
+#     [V18 - Schema-Aligned Discriminative Objectness]
+#
+#     基于 V17 架构优化：
+#     1. 策略核心：Discriminative Objectness (边界感知 + 细粒度区分)。
+#     2. 维度覆盖：集成了论文的 9 大视觉维度 (Shape, Color, Texture, etc.) 作为生成锚点。
+#     3. 继承机制：显式允许保留父类特征 (Inherited Traits)。
+#     4. 数量控制：生成 30 条以供筛选最佳的 25 条。
+#     """
+#     return f"""
+# You are an expert Computer Vision Data Generator for an Open-World Object Detection model (OW-OVD).
+# Target Object: "{class_name}"
+# Super-Class Context: This object is a subtype of "{super_class}".
+#
+# ### MISSION
+# Generate exactly **30** distinct visual attributes.
+# (I will strictly select the best 25, so provide high-quality, diverse candidates).
+#
+# ### 🧠 CORE STRATEGY: "Discriminative Objectness via 9 Dimensions"
+# You must describe the object by scanning through **9 Visual Dimensions**.
+# For each dimension, apply two lenses:
+# 1.  **Objectness (Detection):** How does this attribute define the object's boundary or volume against a background?
+# 2.  **Discrimination (Classification):** How does this attribute distinguish "{class_name}" from other "{super_class}"s?
+#
+# ### 🧭 9-DIMENSIONAL VISUAL ANCHORS (Use these as triggers)
+# Ensure the 30 attributes are distributed across these categories. **Do NOT suppress generic parent traits** (e.g., if it's an animal, "has legs" is valid).
+#
+# 1.  **Shape:** Geometric forms, outlines, silhouette (e.g., "object which has a cylindrical body").
+# 2.  **Color:** Dominant colors, specific patterns, contrast (e.g., "object which has black and white stripes").
+# 3.  **Texture:** Surface quality, tactility (e.g., "object which has a furry texture", "object which is metallic").
+# 4.  **Size:** Relative scale, aspect ratio, volume (e.g., "object which is elongated", "object which is massive relative to a human").
+# 5.  **Material:** Physical composition (e.g., "object which is made of translucent plastic").
+# 6.  **Features:** Distinct visible parts/components (e.g., "object which has a handle", "object which features a screen").
+# 7.  **Appearance:** Overall look, finish, style (e.g., "object which appears glossy", "object which looks weathered").
+# 8.  **Behavior (Visualized):** Visible states or interactions. **MUST BE VISIBLE.** (e.g., "object which is held in a hand", "object which is standing").
+# 9.  **Context/Environment:** Typical background cues (e.g., "object which is typically found on a road").
+#
+# ### ⛔ STRICT NEGATIVE CONSTRAINTS (CRITICAL):
+# To ensure high performance with CLIP:
+# 1.  **NO Abstract Functions:** NEVER write "used for cooking". WRITE "has a surface for holding food".
+# 2.  **NO Intangible Traits:** DO NOT mention price, origin, sound, or smell.
+# 3.  **NO Subjective Words:** DO NOT use "beautiful", "scary", "nice".
+# 4.  **NO Generic Fillers:** DO NOT write "object which is visible" or "object which is an object".
+#
+# ### OUTPUT FORMAT
+# Return ONLY a valid JSON object.
+# Every line MUST start with "object which ".
+#
+# {{
+#   "{class_name}": [
+#     "object which [Shape/Structure trait...]",
+#     "object which [Material/Texture trait...]",
+#     "object which [Distinctive Feature trait...]",
+#     "object which [Visual Behavior trait...]",
+#     ...
+#     (Generate exactly 30 lines covering the 9 dimensions)
+#   ]
+# }}
+# """
+
+
+# # 20 21
+# def generate_prompt(class_name, super_class):
+#     """
+#     [V19 - Schema-Aligned + Few-Shot Guidance]
+#     包含：
+#     1. Discriminative Objectness 策略。
+#     2. 9大视觉维度锚点。
+#     3. 严格的正负样本对比 (Few-Shot)，纠正抽象描述。
+#     """
+#     return f"""
+# You are an expert Computer Vision Data Generator for an Open-World Object Detection model (OW-OVD).
+# Target Object: "{class_name}"
+# Super-Class Context: This object is a subtype of "{super_class}".
+#
+# ### MISSION
+# Generate exactly **30** distinct visual attributes.
+# (I will strictly select the best 25, so provide high-quality, diverse candidates).
+#
+# ### 🧠 CORE STRATEGY: "Discriminative Objectness via 9 Dimensions"
+# Scan through these 9 dimensions. For each, describe visible physical traits (Objectness) and unique details (Discrimination).
+# **Do NOT suppress generic parent traits** (Inheritance is allowed).
+#
+# 1. **Shape** (Geometric forms, outlines)
+# 2. **Color** (Dominant colors, patterns)
+# 3. **Texture** (Surface quality, tactility)
+# 4. **Size** (Relative scale, aspect ratio)
+# 5. **Material** (Physical composition)
+# 6. **Features** (Distinct visible parts - *Zoom in here*)
+# 7. **Appearance** (Overall look/style)
+# 8. **Behavior** (Visible states/poses - *Must be visual*)
+# 9. **Context/Environment** (Typical background)
+#
+# ### 💡 FEW-SHOT EXAMPLES (LEARN FROM THESE)
+# Study these pairs to understand the required "Visual Style":
+#
+# **Case 1: Handling "Function/Behavior" (Crucial)**
+# ❌ BAD (Abstract Function): "object which is used for drinking coffee"
+# ✅ GOOD (Visualized State): "object which has a hollow cylindrical body to hold liquid"
+# ✅ GOOD (Visualized Interaction): "object which is held by a human hand via a handle"
+#
+# **Case 2: Handling "Context"**
+# ❌ BAD (Invisible Context): "object which is sold in a supermarket"
+# ✅ GOOD (Visual Background): "object which is placed on a shelf or table surface"
+#
+# **Case 3: Handling "Subjectivity"**
+# ❌ BAD (Subjective): "object which looks beautiful and expensive"
+# ✅ GOOD (Objective): "object which has a glossy, polished gold surface"
+#
+# **Case 4: Handling "Generic Traits"**
+# ❌ BAD (Too Generic): "object which is an object"
+# ✅ GOOD (Generic but Visual): "object which casts a shadow on the ground"
+#
+# ### ⛔ STRICT NEGATIVE CONSTRAINTS
+# 1. **NO Abstract Functions:** Never describe what it *does*, describe what it *looks like* when doing it.
+# 2. **NO Intangible Traits:** No price, origin (e.g., "made in China"), or sound.
+# 3. **NO Redundancy:** Do not generate the same attribute twice with slightly different words.
+#
+# ### OUTPUT FORMAT
+# Return ONLY a valid JSON object.
+# Every line MUST start with "object which ".
+#
+# {{
+#   "{class_name}": [
+#     "object which [Shape: specific geometric detail...]",
+#     "object which [Material: specific material detail...]",
+#     "object which [Feature: distinct part detail...]",
+#     "object which [Behavior: visible state...]",
+#     ...
+#     (Generate exactly 30 lines covering the 9 dimensions)
+#   ]
+# }}
+# """
+
+
+# 22
+def generate_prompt(class_name, super_class):
+    return f"""
+You are an expert Computer Vision Data Generator for an Open-World Object Detection model (OW-OVD).
+
+Target Object: "{class_name}"
+Super-Class Context: This object is a subtype of "{super_class}".
+
+======================================================================
+MISSION
+Generate exactly **30** distinct visual attributes.
+(I will strictly select the best 25.)
+
+Every line MUST start with:
+    object which ...
+
+Return ONLY a valid JSON object.
+======================================================================
+
+🧠 CORE STRATEGY — OBJECT-CENTRIC DISCRIMINATIVE OBJECTNESS
+
+Each attribute must satisfy BOTH:
+1. **Objectness (Detection):**
+   It must describe a visible physical property that separates the object
+   from background (shape, boundary, enclosure, rigid body, edge continuity).
+2. **Discrimination (Classification):**
+   It must help distinguish "{class_name}" from other "{super_class}" objects.
+
+----------------------------------------------------------------------
+🧭 9 VISUAL DIMENSIONS — USE AS GENERATION ANCHORS
+
+Scan through all dimensions; distribute attributes across them.
+
+1. **Shape & Geometry**
+   (silhouette, outline, aspect ratio, 3D form)
+
+2. **Physical Boundary & Integrity**  ★ CRITICAL
+   (continuous outer contour, enclosed shell, compact volume)
+
+3. **Material & Texture**
+   (metal, glass, fur, matte, glossy, soft, rigid)
+
+4. **Size & Proportion**
+   (relative scale, thickness, elongated vs compact)
+
+5. **Distinct Parts / Components**
+   (handles, screens, wheels, legs, buttons, bezels, openings)
+
+6. **Surface Structure**
+   (flat planes, curved surfaces, perforations, ridges)
+
+7. **Appearance**
+   (finish, wear, reflectivity, transparency)
+
+8. **Visual State / Pose (OBJECT-CENTRIC ONLY)**
+   ❗ Must be expressed as object geometry, NOT external actors.
+   - GOOD: "object which has a hinged part in an open configuration"
+   - BAD:  "object which is held by a person"
+
+9. **Object-Centric Context**
+   ❗ Context must be mapped to object geometry.
+   - GOOD: "object which has a flat base designed to contact a supporting surface"
+   - BAD:  "object which is placed on a table"
+
+----------------------------------------------------------------------
+⛔ STRICT NEGATIVE CONSTRAINTS
+
+• NO abstract functions ("used for", "designed to help").
+• NO invisible traits (price, origin, sound, smell).
+• NO subjective words ("beautiful", "popular").
+• NO background-dependent context (hands, people, tables, rooms).
+• NO generic fillers ("object which is a thing").
+
+----------------------------------------------------------------------
+OUTPUT FORMAT — JSON ONLY
+
+{{
+  "{class_name}": [
+    "object which ...",
+    ...
+    (generate exactly 30 lines)
+  ]
+}}
+
+"""
+
+
+def fetch_attributes(class_name, super_class, max_retries=3):
+    prompt = generate_prompt(class_name, super_class)
+
+    for attempt in range(max_retries):
+        try:
+            response = client.chat.completions.create(
+                model=MODEL_NAME,
+                messages=[
+                    {"role": "system",
+                     "content": "You are a specialized data generation assistant for computer vision. You output strictly valid JSON."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.7,
+                response_format={"type": "json_object"}, # 如果报错 'json_object' 不支持，请注释掉这行
+                max_tokens=1024
+            )
+
+            content = response.choices[0].message.content
+
+            # 清理可能存在的 markdown 代码块标记
+            if content.startswith("```json"):
+                content = content.replace("```json", "").replace("```", "")
+            elif content.startswith("```"):
+                content = content.replace("```", "")
+
+            content = content.strip()
+
+            # 解析 JSON 确保格式正确
+            data = json.loads(content)
+
+            # 校验数据结构
+            if class_name in data and isinstance(data[class_name], list):
+                attrs = data[class_name]
+
+                # 1. 过滤: 必须以 "object which" 开头
+                valid_attrs = [a for a in attrs if str(a).strip().startswith("object which")]
+
+                # 2. 去重: 保持顺序去重 (DeepSeek 偶尔会重复生成相似的句子)
+                seen = set()
+                unique_attrs = []
+                for attr in valid_attrs:
+                    if attr not in seen:
+                        unique_attrs.append(attr)
+                        seen.add(attr)
+
+                # 3. 数量检查与截断
+                if len(unique_attrs) < 20:
+                    print(f"  Warning: Only got {len(unique_attrs)} valid attributes for {class_name}")
+
+                # 即使 LLM 给出了 30 条，我们只取质量可能最高的 **前 25 条**
+                final_attrs = unique_attrs[:25]
+
+                return final_attrs
+            else:
+                print(f"  Warning: JSON structure invalid for {class_name}, retrying...")
+
+        except json.JSONDecodeError:
+            print(f"  Error: Failed to parse JSON for {class_name}. Retrying ({attempt + 1}/{max_retries})...")
+        except Exception as e:
+            print(f"  Error fetching {class_name}: {e}. Retrying ({attempt + 1}/{max_retries})...")
+            time.sleep(2)
+
+    return None
+
+
+def main():
+    print(f"Target Output File: {OUTPUT_FILE}")
+
+    # 1. 断点续传逻辑
+    if os.path.exists(OUTPUT_FILE):
+        print("Found existing file, loading...")
+        try:
+            with open(OUTPUT_FILE, 'r') as f:
+                all_data = json.load(f)
+            print(f"Loaded {len(all_data)} classes from existing file.")
+        except json.JSONDecodeError:
+            print("Existing file is corrupted, starting fresh.")
+            all_data = {}
+    else:
+        all_data = {}
+
+    print(f"Starting generation for {len(CLASS_SUPERCLASS_MAP)} classes...")
+
+    # 2. 进度条循环
+    pbar = tqdm(CLASS_SUPERCLASS_MAP.items())
+    for cls_name, super_cls in pbar:
+        if cls_name in all_data and len(all_data[cls_name]) >= 20:
+            continue  # 跳过已完成的
+
+        pbar.set_description(f"Generating: {cls_name}")
+
+        attrs = fetch_attributes(cls_name, super_cls)
+
+        if attrs:
+            all_data[cls_name] = attrs
+
+            # 实时保存，防止数据丢失
+            with open(OUTPUT_FILE, 'w') as f:
+                json.dump(all_data, f, indent=2)
+
+            # 避免触发 API 速率限制
+            time.sleep(0.5)
+        else:
+            print(f"\nFailed to generate attributes for {cls_name} after retries.")
+
+    print(f"\nAll Done! Data saved to {OUTPUT_FILE}")
+    print("Next Step: Replace your 'attributes_sowod.json' with this file and run 'generate_sowod_data.py'.")
+
+
+if __name__ == "__main__":
+    main()
