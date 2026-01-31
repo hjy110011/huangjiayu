@@ -5,10 +5,10 @@ import xml.etree.ElementTree as ET
 from tqdm import tqdm
 
 # ================= 配置 =================
-VOC_ROOT = "/home/gdut-627/106G/public-dataset/OWOD/xview/xView_VOC"
+VOC_ROOT = "D:\\xview\\xView_VOC"
 XML_DIR = os.path.join(VOC_ROOT, "Annotations")
 TXT_DIR = os.path.join(VOC_ROOT, "ImageSets", "Main")
-OUTPUT_DIR = os.path.join(VOC_ROOT, "SOWOD_Split")  # JSON 输出位置
+OUTPUT_DIR = os.path.join(VOC_ROOT, "SOWOD_User_Split")  # JSON 输出位置
 
 # ================= 15-15-15-15 划分配置 =================
 SOWOD_TASKS = [
