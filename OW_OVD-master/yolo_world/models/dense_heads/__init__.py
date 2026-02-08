@@ -5,10 +5,12 @@ from .fomo_head import FOMOHead, FOMOHeadModule
 from .umb_head import UMBHead, UMBHeadModule
 from .fomo_nobn_head import FOMOnoBNHead, FOMOnoBNHeadModule
 from .our_head import OurHead, OurHeadModule
-
+from .uav_head import UavHead
+from .uav_a_head import UavAHead
 __all__ = [
     'YOLOWorldHead', 'YOLOWorldHeadModule', 'YOLOWorldSegHead',
     'YOLOWorldSegHeadModule', 'RepYOLOWorldHeadModule',
     'FOMOHead', 'FOMOHeadModule', 'UMBHead', 'UMBHeadModule',
-    'FOMOnoBNHead', 'FOMOnoBNHeadModule', 'OurHead', 'OurHeadModule'
+    'FOMOnoBNHead', 'FOMOnoBNHeadModule', 'OurHead', 'OurHeadModule','UavHead','UavAHead'
 ]
+
