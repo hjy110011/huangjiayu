@@ -10,12 +10,13 @@ from .mm_backbone import (
 )
 from .uav_backbone import UAVBackbone
 from  .uav_a_backbone import UAVABackbone
-
+from .uav_b_backbone import UAVBBackbone
 __all__ = [
     'MultiModalYOLOBackbone',
     'HuggingVisionBackbone',
     'HuggingCLIPLanguageBackbone',
     'PseudoLanguageBackbone',
     'UAVBackbone',
-    'UAVABackbone'
+    'UAVABackbone',
+    'UAVBBackbone'
 ]
