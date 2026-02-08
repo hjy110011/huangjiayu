@@ -10,7 +10,7 @@ from multiprocessing import Pool, cpu_count, freeze_support
 CONFIG = {
     "geojson_path": "D:\\xview\\xView_train.geojson",
     "images_dir": "D:\\xview\\images\\train_images\\",
-    "output_dir": "D:\\xview\\xView_VOC1",
+    "output_dir": "D:\\xview\\xView_VOC",
     "crop_size": 800,
     "overlap": 0.2,
     "min_visibility": 0.7,  # 建议稍微降低一点，0.8可能太严格导致丢框

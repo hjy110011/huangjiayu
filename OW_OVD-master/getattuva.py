@@ -11,7 +11,7 @@ API_KEY = "sk-eeb0b4e780aa4bb8a0447adc0ec0757c"  # Your API Key
 BASE_URL = "https://api.deepseek.com"  # DeepSeek Base URL
 MODEL_NAME = "deepseek-chat"  # Model Name
 
-OUTPUT_FILE = "xview_attributes1.json"
+OUTPUT_FILE = "xview_attributes2.json"
 
 # ================= xView 60 Classes Mapping (15-15-15-15 Split) =================
 # Format: "Class_Name_In_Dataset": "Super_Class_Context"
@@ -162,75 +162,152 @@ client = OpenAI(api_key=API_KEY, base_url=BASE_URL)
 # }}
 # """
 
+# def generate_prompt(class_name, super_class):
+#     """
+#     [V20 - xView Specialization: Satellite/Aerial Perspective]
+#     专为 xView 数据集优化。
+#     核心策略：Top-Down View (BEV) + Shadow Reasoning + Contextual Scale
+#     """
+#     return f"""
+# You are an expert Aerial Imagery Analyst specialized in the xView dataset (Satellite/Overhead Imagery).
+# Target Object: "{class_name}"
+# Super-Class Context: This object is a subtype of "{super_class}".
+#
+# ### MISSION
+# Generate exactly **30** distinct visual attributes strictly from a **Top-Down / Bird's Eye View (BEV)**.
+# The images are satellite photos, so objects often look like 2D geometric shapes with shadows.
+#
+# ### 🧠 CORE STRATEGY: "Aerial Objectness via 7 Dimensions"
+# Scan through these 7 dimensions focused on overhead imagery.
+# **CRITICAL:** Do NOT describe features only visible from the ground (e.g., tires, side doors, license plates, faces).
+#
+# 1. **2D Footprint/Outline** (The geometric shape seen from above, e.g., rectangular, T-shaped).
+# 2. **Roof/Top Structure** (The primary visible surface, e.g., vents on a roof, sunroof on a car).
+# 3. **Shadow Projection** (The shadow cast on the ground, indicating height and side profile).
+# 4. **Relative Scale** (Size comparison to roads, buildings, or other vehicles).
+# 5. **Color/Reflectivity** (Sun glint, matte paint, camouflage patterns).
+# 6. **Spatial Context** (Where is it usually found? e.g., on asphalt, moored at a dock, in a construction zone).
+# 7. **Orientation/Alignment** (e.g., aligned parallel to road lanes, parked in rows).
+#
+# ### 💡 FEW-SHOT EXAMPLES (LEARN THE "AERIAL" STYLE)
+# Study these pairs to strictly separate "Ground View" (Invalid) from "Aerial View" (Valid):
+#
+# **Case 1: Handling "Vehicles" (e.g., Truck)**
+# ❌ BAD (Ground View): "object which has large circular tires and a front grille"
+# ✅ GOOD (Top-Down): "object which consists of a distinct cabin block followed by a long rectangular trailer"
+# ✅ GOOD (Shadow): "object which casts a rectangular shadow indicating a boxy vertical profile"
+#
+# **Case 2: Handling "Maritime" (e.g., Ship)**
+# ❌ BAD (Waterline View): "object which has a hull rising out of the water"
+# ✅ GOOD (Top-Down): "object which has a pointed bow and a flat deck surface contrasting with the dark water"
+# ✅ GOOD (Wake): "object which leaves a V-shaped white wake trail on the water surface"
+#
+# **Case 3: Handling "Buildings/Infrastructure"**
+# ❌ BAD (Facade View): "object which has glass windows and a front entrance"
+# ✅ GOOD (Top-Down): "object which has a flat grey concrete roof with AC units visible on top"
+# ✅ GOOD (Outline): "object which forms a large L-shaped or U-shaped geometric footprint"
+#
+# **Case 4: Handling "Generic/Low-Res Features"**
+# ❌ BAD (Too Detailed): "object which has a brand logo on the hood"
+# ✅ GOOD (Resolution Aware): "object which appears as a small, compact rectangular blob on the road"
+#
+# ### ⛔ STRICT NEGATIVE CONSTRAINTS
+# 1. **NO Ground-Level Features:** Never mention wheels, undercarriages, side windows, doors, or license plates.
+# 2. **NO Human Actions:** Do not say "held by a person" (people are dots). Say "located near small pixelated clusters (people)".
+# 3. **NO Intangible Traits:** No functions ("used for transport"), only visual evidence ("located on a highway").
+#
+# ### OUTPUT FORMAT
+# Return ONLY a valid JSON object.
+# Every line MUST start with "object which ".
+#
+# {{
+#   "{class_name}": [
+#     "object which [Footprint: specific top-down shape...]",
+#     "object which [Shadow: shadow shape detail...]",
+#     "object which [Roof: distinct top detail...]",
+#     "object which [Context: specific location...]",
+#     ...
+#     (Generate exactly 30 lines covering the Aerial dimensions)
+#   ]
+# }}
+# """
+
+
 def generate_prompt(class_name, super_class):
-    """
-    [V20 - xView Specialization: Satellite/Aerial Perspective]
-    专为 xView 数据集优化。
-    核心策略：Top-Down View (BEV) + Shadow Reasoning + Contextual Scale
-    """
     return f"""
-You are an expert Aerial Imagery Analyst specialized in the xView dataset (Satellite/Overhead Imagery).
+You are an expert Computer Vision Data Generator for an Open-World Object Detection model (OW-OVD), specialized in **UAV (Unmanned Aerial Vehicle) and Aerial Imagery**.
+
 Target Object: "{class_name}"
 Super-Class Context: This object is a subtype of "{super_class}".
 
-### MISSION
-Generate exactly **30** distinct visual attributes strictly from a **Top-Down / Bird's Eye View (BEV)**.
-The images are satellite photos, so objects often look like 2D geometric shapes with shadows.
+======================================================================
+MISSION
+Generate exactly **30** distinct visual attributes from an **AERIAL PERSPECTIVE**.
+(I will strictly select the best 25.)
 
-### 🧠 CORE STRATEGY: "Aerial Objectness via 7 Dimensions"
-Scan through these 7 dimensions focused on overhead imagery.
-**CRITICAL:** Do NOT describe features only visible from the ground (e.g., tires, side doors, license plates, faces).
+Every line MUST start with:
+    object which ...
 
-1. **2D Footprint/Outline** (The geometric shape seen from above, e.g., rectangular, T-shaped).
-2. **Roof/Top Structure** (The primary visible surface, e.g., vents on a roof, sunroof on a car).
-3. **Shadow Projection** (The shadow cast on the ground, indicating height and side profile).
-4. **Relative Scale** (Size comparison to roads, buildings, or other vehicles).
-5. **Color/Reflectivity** (Sun glint, matte paint, camouflage patterns).
-6. **Spatial Context** (Where is it usually found? e.g., on asphalt, moored at a dock, in a construction zone).
-7. **Orientation/Alignment** (e.g., aligned parallel to road lanes, parked in rows).
-
-### 💡 FEW-SHOT EXAMPLES (LEARN THE "AERIAL" STYLE)
-Study these pairs to strictly separate "Ground View" (Invalid) from "Aerial View" (Valid):
-
-**Case 1: Handling "Vehicles" (e.g., Truck)**
-❌ BAD (Ground View): "object which has large circular tires and a front grille"
-✅ GOOD (Top-Down): "object which consists of a distinct cabin block followed by a long rectangular trailer"
-✅ GOOD (Shadow): "object which casts a rectangular shadow indicating a boxy vertical profile"
-
-**Case 2: Handling "Maritime" (e.g., Ship)**
-❌ BAD (Waterline View): "object which has a hull rising out of the water"
-✅ GOOD (Top-Down): "object which has a pointed bow and a flat deck surface contrasting with the dark water"
-✅ GOOD (Wake): "object which leaves a V-shaped white wake trail on the water surface"
-
-**Case 3: Handling "Buildings/Infrastructure"**
-❌ BAD (Facade View): "object which has glass windows and a front entrance"
-✅ GOOD (Top-Down): "object which has a flat grey concrete roof with AC units visible on top"
-✅ GOOD (Outline): "object which forms a large L-shaped or U-shaped geometric footprint"
-
-**Case 4: Handling "Generic/Low-Res Features"**
-❌ BAD (Too Detailed): "object which has a brand logo on the hood"
-✅ GOOD (Resolution Aware): "object which appears as a small, compact rectangular blob on the road"
-
-### ⛔ STRICT NEGATIVE CONSTRAINTS
-1. **NO Ground-Level Features:** Never mention wheels, undercarriages, side windows, doors, or license plates.
-2. **NO Human Actions:** Do not say "held by a person" (people are dots). Say "located near small pixelated clusters (people)".
-3. **NO Intangible Traits:** No functions ("used for transport"), only visual evidence ("located on a highway").
-
-### OUTPUT FORMAT
 Return ONLY a valid JSON object.
-Every line MUST start with "object which ".
+======================================================================
+
+🧠 CORE STRATEGY — NADIR & OBLIQUE VIEW DISCRIMINATION
+
+Each attribute must be identifiable from a **top-down (nadir)** or **high-angle oblique** view.
+1. **Topological Objectness:** Focus on the footprint, roof-line, and projected geometry.
+2. **Aerial Discrimination:** Distinguish "{class_name}" from other "{super_class}" by features visible from above.
+
+----------------------------------------------------------------------
+🧭 9 AERIAL VISUAL DIMENSIONS — USE AS ANCHORS
+
+1. **Top-Down Shape & Footprint**
+   (rectilinear outline, circular footprint, cross-shaped planform)
+
+2. **Projected Geometry & Height Evidence** ★ CRITICAL
+   (vertical extrusion visible in oblique views, cast shadow indicating height/shape)
+
+3. **Roof/Top Surface Characteristics**
+   (top-side texture, skylights, cooling units, solar panels, hatch patterns)
+
+4. **Planar Aspect Ratio**
+   (elongated ribbon-like shape vs. compact polygonal form from above)
+
+5. **Structural Symmetry (Aerial)**
+   (bilateral symmetry along the longitudinal axis, radial symmetry)
+
+6. **Material Reflectivity & Albedo**
+   (specular glint from glass/metal surfaces, matte asphalt-like texture, heat-absorbent dark surfaces)
+
+7. **Boundary Continuity**
+   (distinct edge contrast against terrain, paved borders, containment walls)
+
+8. **Orientation & Grouping Patterns**
+   (object which aligns in parallel rows, object which forms a cluster with uniform spacing)
+
+9. **Geometric Relation to Ground/Infrastructure**
+   (object which is intersected by linear markings, object which fits within a standard parking/docking bay)
+
+----------------------------------------------------------------------
+⛔ STRICT UAV-SPECIFIC CONSTRAINTS
+
+• NO eye-level-only details (e.g., "object which has a front-facing door handle").
+• NO undercarriage details (unless visible during banking/turning).
+• NO small-scale text or labels (usually invisible from flight altitudes).
+• NO background-dependent context (people, indoor furniture).
+• NO abstract functions or invisible traits.
+
+----------------------------------------------------------------------
+OUTPUT FORMAT — JSON ONLY
 
 {{
   "{class_name}": [
-    "object which [Footprint: specific top-down shape...]",
-    "object which [Shadow: shadow shape detail...]",
-    "object which [Roof: distinct top detail...]",
-    "object which [Context: specific location...]",
+    "object which ...",
     ...
-    (Generate exactly 30 lines covering the Aerial dimensions)
+    (generate exactly 30 lines)
   ]
 }}
 """
+
 def fetch_attributes(class_name, super_class, max_retries=3):
     prompt = generate_prompt(class_name, super_class)
 

@@ -7,10 +7,10 @@ from tqdm import tqdm
 
 # ================= 配置区域 =================
 # 1. 属性源文件 (上一步 LLM 生成的文件)
-ATTRIBUTES_FILE = "/home/gdut-627/huangjiayu/OW_OVD-master/xview_attributes1.json"
+ATTRIBUTES_FILE = "/home/gdut-627/huangjiayu/OW_OVD-master/xview_attributes2.json"
 
 # 2. 输出目录 (必须与之前的步骤一致: xView_VOC/SOWOD_User_Split)
-OUTPUT_ROOT = "/home/gdut-627/106G/public-dataset/OWOD/xview/xView_VOC/SOWOD_User_Split"
+OUTPUT_ROOT = "/home/gdut-627/106G/public-dataset/OWOD/xview/xView_VOC/SOWOD_Split"
 TEXT_OUTPUT_DIR = "data/texts/SOWOD"  # 文本映射文件存放位置
 
 # 3. 模型 ID
@@ -22,30 +22,29 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 # 这里的名字带有下划线，用于文件查找；输入 CLIP 时我们会把下划线换成空格。
 
 T1_CLASSES = [
-    "Fixed-wing_Aircraft", "Small_Aircraft", "Cargo_Plane", "Helicopter",
-    "Passenger_Vehicle", "Small_Car", "Bus", "Pickup_Truck", "Truck",
-    "Railway_Vehicle", "Passenger_Car", "Locomotive", "Maritime_Vessel",
-    "Motorboat", "Fishing_Vessel"
+    "Passenger_Vehicle", "Small_Car", "Bus", "Pickup_Truck", "Utility_Truck",
+    "Truck", "Cargo_Truck", "Truck_w_Box", "Truck_Tractor", "Trailer",
+    "Truck_w_Flatbed", "Truck_w_Liquid", "Railway_Vehicle", "Passenger_Car",
+    "Cargo_Car", "Flat_Car", "Tank_car", "Locomotive"
 ]
 
 T2_CLASSES = [
-    "Utility_Truck", "Cargo_Truck", "Truck_w_Box", "Truck_Tractor",
-    "Trailer", "Truck_w_Flatbed", "Truck_w_Liquid", "Crane_Truck",
-    "Ferry", "Yacht", "Container_Ship", "Oil_Tanker", "Engineering_Vehicle",
-    "Dump_Truck", "Haul_Truck"
+    "Maritime_Vessel", "Motorboat", "Sailboat", "Tugboat", "Barge",
+    "Fishing_Vessel", "Ferry", "Yacht", "Container_Ship", "Oil_Tanker",
+    "Fixed-wing_Aircraft", "Small_Aircraft", "Cargo_Plane", "Helicopter"
 ]
 
 T3_CLASSES = [
-    "Tower_crane", "Container_Crane", "Reach_Stacker", "Straddle_Carrier",
-    "Mobile_Crane", "Scraper_Tractor", "Front_loader_Bulldozer", "Excavator",
-    "Cement_Mixer", "Ground_Grader", "Hut_Tent", "Shed", "Construction_Site",
-    "Vehicle_Lot", "Helipad"
+    "Crane_Truck", "Engineering_Vehicle", "Tower_crane", "Container_Crane",
+    "Reach_Stacker", "Straddle_Carrier", "Mobile_Crane", "Dump_Truck",
+    "Haul_Truck", "Scraper_Tractor", "Front_loader_Bulldozer", "Excavator",
+    "Cement_Mixer", "Ground_Grader"
 ]
 
 T4_CLASSES = [
-    "Building", "Aircraft_Hangar", "Damaged_Building", "Facility",
-    "Storage_Tank", "Shipping_container_lot", "Shipping_Container", "Pylon",
-    "Tower", "Flat_Car", "Tank_car", "Cargo_Car", "Sailboat", "Tugboat", "Barge"
+    "Hut_Tent", "Shed", "Building", "Damaged_Building", "Facility",
+    "Construction_Site", "Vehicle_Lot", "Storage_Tank", "Shipping_container_lot",
+    "Shipping_Container", "Pylon", "Tower", "Aircraft_Hangar", "Helipad"
 ]
 
 TASKS = [T1_CLASSES, T2_CLASSES, T3_CLASSES, T4_CLASSES]

@@ -6,3 +6,11 @@ export PYTHONPATH=$PYTHONPATH:/home/gdut-627/huangjiayu/OW_OVD-master
 
 
  sk-eeb0b4e780aa4bb8a0447adc0ec0757c
+
+
+ python /home/gdut-627/huangjiayu/OW_OVD-master/third_party/mmyolo/tools/train.py /home/gdut-627/huangjiayu/OW_OVD-master/configs/open_world/sowod/my/large_t1.py
+
+
+export HF_ENDPOINT=https://hf-mirror.com
+
+

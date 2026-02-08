@@ -16,13 +16,17 @@ class_names = ["Fixed-wing_Aircraft", "Small_Aircraft", "Cargo_Plane", "Helicopt
 # open world setting
 prev_intro_cls = 15
 cur_intro_cls = 15
+data_root='/home/gdut-627/106G/public-dataset/OWOD/xview/xView_VOC/'
 train_json = 'SOWOD_User_Split/t2_train.json'
+test_json='SOWOD_User_Split/test.json'
+test_name = 'trainval.txt'
 # embedding_path = 'data/VOC2007/SOWOD/t2_gt_embeddings.npy'
 # att_embeddings = 'data/VOC2007/SOWOD/task_att_1_2_embeddings.pth'
 # embedding_path = 'data/VOC2007/SOWOD/fomo_image_net_t2.npy'
 # att_embeddings = None
 embedding_path = '/home/gdut-627/106G/public-dataset/OWOD/xview/xView_VOC/SOWOD_User_Split/t2_gt_embeddings.npy'
 att_embeddings = '/home/gdut-627/106G/public-dataset/OWOD/xview/xView_VOC/SOWOD_User_Split/task_att_1_2_embeddings.pth'
+class_text_path=f'/home/gdut-627/huangjiayu/data/texts/SOWOD/class_texts.json'
 top_k = 2
 pipline = [dict(type='att_select', log_start_epoch=1)]
 thr = 0.6
@@ -42,7 +46,7 @@ neck_embed_channels = [128, 256, _base_.last_stage_out_channels // 2]
 neck_num_heads = [4, 8, _base_.last_stage_out_channels // 2 // 32]
 base_lr = 2e-4 / 4
 weight_decay = 0.05
-train_batch_size_per_gpu = 4
+train_batch_size_per_gpu = 8
 load_from = '/home/gdut-627/huangjiayu/work_dirs/large_t1/best_Current_68.pth'
 persistent_workers = False
 
@@ -53,7 +57,7 @@ model = dict(type='OurDetector',
              num_test_classes=num_classes,
              embedding_path=embedding_path,
              prompt_dim=text_channels,
-             num_prompts=80,
+             num_prompts=60,
              pipline=pipline,
              data_preprocessor=dict(type='YOLOv5DetDataPreprocessor'),
              backbone=dict(_delete_=True,
@@ -95,11 +99,11 @@ coco_train_dataset = dict(
         dataset=dict(
             type='YOLOv5CocoDataset',
             metainfo=dict(classes=class_names),
-            data_root='/home/gdut-627/106G/public-dataset/OWOD/xview/xView_VOC/',
+            data_root=data_root,
             ann_file=train_json,
             data_prefix=dict(img='JPEGImages/'),
             filter_cfg=dict(filter_empty_gt=False, min_size=1)),
-        class_text_path=f'data/texts/SOWOD/class_texts.json',
+        class_text_path=class_text_path,
         pipeline=_base_.train_pipeline)
 
 train_dataloader = dict(persistent_workers=persistent_workers,
@@ -158,8 +162,8 @@ test_pipeline = [
 ]
 # evaluation settings
 test_dataloader = dict(dataset=dict(type='YOLOv5CocoDataset',
-                        data_root='/home/gdut-627/106G/public-dataset/OWOD/xview/xView_VOC/',
-                        ann_file='SOWOD_User_Split/test.json',
+                        data_root=data_root,
+                        ann_file=test_json,
                         data_prefix=dict(img='JPEGImages/'),
                         filter_cfg=dict(filter_empty_gt=False, min_size=1),
                         pipeline=test_pipeline)
@@ -168,8 +172,8 @@ test_dataloader = dict(dataset=dict(type='YOLOv5CocoDataset',
 test_evaluator = dict(_delete_=True,
                      type='OWODEvaluator',
                      cfg=dict(
-                        dataset_root='/home/gdut-627/106G/public-dataset/OWOD/xview/xView_VOC',
-                        file_name='trainval.txt',
+                        dataset_root=data_root,
+                        file_name=test_name,
                         prev_intro_cls=prev_intro_cls,
                         cur_intro_cls=cur_intro_cls,
                         unknown_id=60,
@@ -178,4 +182,3 @@ test_evaluator = dict(_delete_=True,
                     )
 val_evaluator = test_evaluator
 val_dataloader = test_dataloader
-find_unused_parameters = True
