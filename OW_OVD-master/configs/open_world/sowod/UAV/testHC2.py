@@ -86,7 +86,7 @@ model = dict(type='UAVDetector',
                             prev_intro_cls=prev_intro_cls,
                             cur_intro_cls=cur_intro_cls,
                             top_k=top_k,
-                            bbox_loss_type='wiou',
+                            bbox_loss_type='nwd_wiou',
                             head_module=dict(
                                 type='OurHeadModule',
                                 freeze_all=False,
