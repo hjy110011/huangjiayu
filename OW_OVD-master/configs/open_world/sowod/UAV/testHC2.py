@@ -31,7 +31,7 @@ test_json = 'COCO_JSONB/instances_test.json'
 # att_embeddings = None
 embedding_path = '/kaggle/input/datasets/hjy111000/uav-owd/SOWOD_Split/SOWOD_Split/t1_gt_embeddings.npy'
 att_embeddings = '/kaggle/input/datasets/hjy111000/uav-owd/SOWOD_Split/SOWOD_Split/task_att_1_embeddings.pth'
-class_text_path = f'/kaggle/input/datasets/hjy111000/uav-owd/SOWOD_Split/SOWOD_Splittexts/class_texts.json'
+class_text_path = f'/kaggle/input/datasets/hjy111000/uav-owd/SOWOD_Split/SOWOD_Split/texts/class_texts.json'
 file_name = 'all.txt'
 pipline = [dict(type='att_select', log_start_epoch=1)]
 thr = 0.6
