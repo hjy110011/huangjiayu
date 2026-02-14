@@ -560,7 +560,6 @@ class v8PoseLoss(v8DetectionLoss):
             (batch_size, max_kpts, keypoints.shape[1], keypoints.shape[2]), device=keypoints.device
         )
 
-        # TODO: any idea how to vectorize this?
         # Fill batched_keypoints with keypoints based on batch_idx
         for i in range(batch_size):
             keypoints_i = keypoints[batch_idx == i]
@@ -752,7 +751,7 @@ class TVPDetectLoss:
     def __call__(self, preds, batch):
         """Calculate the loss for text-visual prompt detection."""
         feats = preds[1] if isinstance(preds, tuple) else preds
-        assert self.ori_reg_max == self.vp_criterion.reg_max  # TODO: remove it
+        assert self.ori_reg_max == self.vp_criterion.reg_max
 
         if self.ori_reg_max * 4 + self.ori_nc == feats[0].shape[1]:
             loss = torch.zeros(3, device=self.vp_criterion.device, requires_grad=True)
