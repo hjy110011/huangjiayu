@@ -22,7 +22,7 @@ class_names = [
 # open world setting
 prev_intro_cls = 0
 cur_intro_cls = 14
-data_root = '/kaggle/input/datasets/hjy111000/uav-owd/SOWOD_CLEAN'
+data_root = '/kaggle/input/datasets/hjy111000/uav-owd/SOWOD_CLEAN/SOWOD_CLEAN'
 train_json = 'COCO_JSONB/instances_train_t1.json'
 test_json = 'COCO_JSONB/instances_test.json'
 # embedding_path = 'data/VOC2007/SOWOD/t1_gt_embeddings.npy'
