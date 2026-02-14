@@ -29,9 +29,9 @@ test_json = 'COCO_JSONB/instances_test.json'
 # att_embeddings = 'data/VOC2007/SOWOD/task_att_1_embeddings.pth'
 # embedding_path = 'data/VOC2007/SOWOD/fomo_image_net_t1.npy'
 # att_embeddings = None
-embedding_path = '/kaggle/input/datasets/hjy111000/uav-owd/SOWOD_Split/t1_gt_embeddings.npy'
-att_embeddings = '/kaggle/input/datasets/hjy111000/uav-owd/SOWOD_Splittask_att_1_embeddings.pth'
-class_text_path = f'/kaggle/input/datasets/hjy111000/uav-owd/SOWOD_Split/texts/class_texts.json'
+embedding_path = '/kaggle/input/datasets/hjy111000/uav-owd/SOWOD_Split/SOWOD_Split/t1_gt_embeddings.npy'
+att_embeddings = '/kaggle/input/datasets/hjy111000/uav-owd/SOWOD_Split/SOWOD_Split/task_att_1_embeddings.pth'
+class_text_path = f'/kaggle/input/datasets/hjy111000/uav-owd/SOWOD_Split/SOWOD_Splittexts/class_texts.json'
 file_name = 'all.txt'
 pipline = [dict(type='att_select', log_start_epoch=1)]
 thr = 0.6
