@@ -260,30 +260,17 @@ class UavHead(YOLOv8Head):
             known_logits = known_logits.sigmoid().permute(0, 2, 3, 1)
             unknown_logits = unknown_logits.sigmoid().permute(0, 2, 3, 1)
 
-            # 1. 计算已知类别的不确定性 (Entropy)
+            # 计算已知类别的不确定性
             uncertainty = self.calculate_uncertainty(known_logits)
-
-            # 2. 计算属性得分 (Visual Evidence)
+            # uncertainty = 0
+            # 计算属性不确定性并调整属性权重
+            # top_k_att_score = self.select_top_k_attributes(unknown_logits, k=self.top_k)
             top_k_att_score = self.compute_weighted_top_k_attributes(unknown_logits, k=self.top_k)
+            # top_k_att_score = unknown_logits.max(dim=-1, keepdim=True)[0]
+            # 融合已知和未知类别的预测
 
-            # ---------------- [创新点修改 START] ----------------
-            # 策略：Attribute-Gated Uncertainty Calibration
-            # 解释：在无人机图像中，背景噪声往往具有高不确定性。我们利用属性得分作为"物体性(Objectness)"的先验，
-            #      来抑制背景的高不确定性，同时增强真实未知物体的得分。
-
-            # 归一化不确定性到 [0, 1] 范围 (可选，防止数值爆炸)
-            uncertainty_norm = (uncertainty - uncertainty.min()) / (uncertainty.max() - uncertainty.min() + 1e-6)
-
-            # 核心公式：S_unk = Att_Score * (1 + alpha * Uncertainty)
-            # 只有当 Att_Score 高时，Uncertainty 才能显著贡献分数。
-            # 如果 Att_Score 低（背景），Uncertainty 再高也会被抑制。
-            calibration_factor = 0.5  # 这是一个超参数，可以调节不确定性的权重
-            fused_score = top_k_att_score * (1 + calibration_factor * uncertainty_norm)
-
-            # 最终分数：抑制已被识别为 Known 的区域
-            max_known_score = known_logits.max(-1, keepdim=True)[0]
-            unknown_logits_final = fused_score * (1 - max_known_score)
-            # ---------------- [创新点修改 END] ------------------
+            unknown_logits_final = (top_k_att_score + uncertainty) / 2 * (1 - known_logits.max(-1, keepdim=True)[0])
+            # unknown_logits_final = (top_k_att_score) * (1 - known_logits.max(-1, keepdim=True)[0])
 
             # 合并已知和未知类别的最终预测结果
             logits = torch.cat([known_logits, unknown_logits_final], dim=-1).permute(0, 3, 1, 2)

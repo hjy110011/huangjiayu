@@ -31,27 +31,27 @@ test_json = 'COCO_JSONB/instances_test.json'
 # att_embeddings = None
 embedding_path = '/home/gdut-627/106G/public-dataset/OWOD/UAV-OWD/SOWOD_CLEAN/SOWOD_Split/t1_gt_embeddings.npy'
 att_embeddings = '/home/gdut-627/106G/public-dataset/OWOD/UAV-OWD/SOWOD_CLEAN/SOWOD_Split/task_att_1_embeddings.pth'
-class_text_path=f'/home/gdut-627/106G/public-dataset/OWOD/UAV-OWD/SOWOD_CLEAN/SOWOD_Split/texts/class_texts.json'
-file_name='all.txt'
+class_text_path = f'/home/gdut-627/106G/public-dataset/OWOD/UAV-OWD/SOWOD_CLEAN/SOWOD_Split/texts/class_texts.json'
+file_name = 'all.txt'
 pipline = [dict(type='att_select', log_start_epoch=1)]
 thr = 0.6
-alpha = 0.3 # 0.3
-top_k =10
-use_sigmoid=True
-distributions = 'paper_repeat/sowod3-1/previous_log/sowod_distribution_sim1.pth'
+alpha = 0.3  # 0.3
+top_k = 10
+use_sigmoid = True
+distributions = 'paper_repeat/sowod4-2/previous_log/sowod_distribution_sim1.pth'
 
 # yolo world setting
-num_classes = prev_intro_cls+cur_intro_cls
-num_training_classes = prev_intro_cls+cur_intro_cls
-max_epochs = 70  # Maximum training epochs
+num_classes = prev_intro_cls + cur_intro_cls
+num_training_classes = prev_intro_cls + cur_intro_cls
+max_epochs = 100  # Maximum training epochs
 close_mosaic_epochs = 10
 save_epoch_intervals = 1
 text_channels = 512
 neck_embed_channels = [128, 256, _base_.last_stage_out_channels // 2]
 neck_num_heads = [4, 8, _base_.last_stage_out_channels // 2 // 32]
-base_lr = 2e-4 / 4
-weight_decay = 0.03
-train_batch_size_per_gpu = 4
+base_lr = 2e-3 / 4
+weight_decay = 0.05
+train_batch_size_per_gpu = 8
 load_from = None
 persistent_workers = False
 
@@ -65,18 +65,37 @@ model = dict(type='UAVDetector',
              num_prompts=33,
              pipline=pipline,
              data_preprocessor=dict(type='YOLOv5DetDataPreprocessor'),
-             backbone=dict(_delete_=True,
-                           type='UAVBackbone',
-                           text_model=None,
-                           image_model={{_base_.model.backbone}},
-                           frozen_stages=-1,
-                           with_text_model=False),
+             # --- 修改开始 ---
+             backbone=dict(
+                 _delete_=True,
+                 type='UAVABackbone',
+                 text_model=None,
+                 image_model=dict(
+                     type='YOLO26Backbone',
+                     # 使用 'n' 模型的缩放系数
+                     deepen_factor=0.50,
+                     widen_factor=0.5,
+                     out_indices=(2, 3, 4),
+                     act_cfg=dict(type='SiLU', inplace=True),
+                     norm_cfg=dict(type='BN', requires_grad=True)
+                 ),
+                 frozen_stages=-1,
+                 with_text_model=False,
+                 # [FIX] 修正这里的 feat_channels 以匹配 widen_factor=0.25
+                 # 计算公式: [256*w, 512*w, 1024*w]
+                 feat_channels=[128, 256, 512]
+             ),
              neck=dict(type='YOLOWorldPAFPN',
                        freeze_all=False,
                        guide_channels=text_channels,
                        embed_channels=neck_embed_channels,
                        num_heads=neck_num_heads,
-                       block_cfg=dict(type='MaxSigmoidCSPLayerWithTwoConv')),
+                       block_cfg=dict(type='MaxSigmoidCSPLayerWithTwoConv'),
+                       in_channels=[128, 256, 512],
+                       # -------------------
+                       # 建议显式指定 out_channels 以防万一，与 input 保持一致
+                       out_channels=[128, 256, 512]
+                       ),
              bbox_head=dict(type='UavHead',
                             att_embeddings=att_embeddings,
                             thr=thr,
@@ -89,26 +108,25 @@ model = dict(type='UAVDetector',
                             head_module=dict(
                                 type='OurHeadModule',
                                 freeze_all=False,
+                                in_channels=[128, 256, 512],
                                 use_bn_head=True,
                                 embed_dims=text_channels,
                                 num_classes=num_training_classes)),
              train_cfg=dict(assigner=dict(num_classes=num_training_classes)))
 
-
-
 # dataset settings
 coco_train_dataset = dict(
-        _delete_=True,
-        type='MultiModalDataset',
-        dataset=dict(
-            type='YOLOv5CocoDataset',
-            metainfo=dict(classes=class_names),
-            data_root=data_root,
-            ann_file=train_json,
-            data_prefix=dict(img='JPEGImages/'),
-            filter_cfg=dict(filter_empty_gt=False, min_size=1)),
-        class_text_path=class_text_path,
-        pipeline=_base_.train_pipeline)
+    _delete_=True,
+    type='MultiModalDataset',
+    dataset=dict(
+        type='YOLOv5CocoDataset',
+        metainfo=dict(classes=class_names),
+        data_root=data_root,
+        ann_file=train_json,
+        data_prefix=dict(img='JPEGImages/'),
+        filter_cfg=dict(filter_empty_gt=False, min_size=1)),
+    class_text_path=class_text_path,
+    pipeline=_base_.train_pipeline)
 
 train_dataloader = dict(persistent_workers=persistent_workers,
                         batch_size=train_batch_size_per_gpu,
@@ -146,17 +164,17 @@ optim_wrapper = dict(optimizer=dict(
     lr=base_lr,
     weight_decay=weight_decay,
     batch_size_per_gpu=train_batch_size_per_gpu),
-                     paramwise_cfg=dict(bias_decay_mult=0.0,
-                                        norm_decay_mult=0.0,
-                                        custom_keys={
-                                            'backbone.text_model':
-                                            dict(lr_mult=0.01),
-                                            'logit_scale':
-                                            dict(weight_decay=0.0),
-                                            'embeddings':
-                                            dict(weight_decay=0.0)
-                                        }),
-                     constructor='YOLOWv5OptimizerConstructor')
+    paramwise_cfg=dict(bias_decay_mult=0.0,
+                       norm_decay_mult=0.0,
+                       custom_keys={
+                           'backbone.text_model':
+                               dict(lr_mult=0.01),
+                           'logit_scale':
+                               dict(weight_decay=0.0),
+                           'embeddings':
+                               dict(weight_decay=0.0)
+                       }),
+    constructor='YOLOWv5OptimizerConstructor')
 
 test_pipeline = [
     *_base_.test_pipeline[:-1],
@@ -166,23 +184,23 @@ test_pipeline = [
 ]
 # evaluation settings
 test_dataloader = dict(dataset=dict(type='YOLOv5CocoDataset',
-                        data_root=data_root,
-                        ann_file=test_json,
-                        data_prefix=dict(img='JPEGImages/'),
-                        filter_cfg=dict(filter_empty_gt=False, min_size=1),
-                        pipeline=test_pipeline)
+                                    data_root=data_root,
+                                    ann_file=test_json,
+                                    data_prefix=dict(img='JPEGImages/'),
+                                    filter_cfg=dict(filter_empty_gt=False, min_size=1),
+                                    pipeline=test_pipeline)
                        )
 
 test_evaluator = dict(_delete_=True,
-                     type='OWODEvaluator',
-                     cfg=dict(
-                        dataset_root=data_root,
-                        file_name=file_name,
-                        prev_intro_cls=prev_intro_cls,
-                        cur_intro_cls=cur_intro_cls,
-                        unknown_id=33,
-                        class_names=class_names
-                     )
-                    )
+                      type='OWODEvaluator',
+                      cfg=dict(
+                          dataset_root=data_root,
+                          file_name=file_name,
+                          prev_intro_cls=prev_intro_cls,
+                          cur_intro_cls=cur_intro_cls,
+                          unknown_id=33,
+                          class_names=class_names
+                      )
+                      )
 val_evaluator = test_evaluator
 val_dataloader = test_dataloader

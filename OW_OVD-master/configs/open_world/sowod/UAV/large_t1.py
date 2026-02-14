@@ -62,7 +62,7 @@ model = dict(type='OurDetector',
              num_test_classes=num_classes,
              embedding_path=embedding_path,
              prompt_dim=text_channels,
-             num_prompts=60,
+             num_prompts=33,
              pipline=pipline,
              data_preprocessor=dict(type='YOLOv5DetDataPreprocessor'),
              backbone=dict(_delete_=True,
@@ -180,7 +180,7 @@ test_evaluator = dict(_delete_=True,
                         file_name=file_name,
                         prev_intro_cls=prev_intro_cls,
                         cur_intro_cls=cur_intro_cls,
-                        unknown_id=60,
+                        unknown_id=33,
                         class_names=class_names
                      )
                     )

@@ -38,19 +38,19 @@ thr = 0.6
 alpha = 0.3 # 0.3
 top_k =10
 use_sigmoid=True
-distributions = 'paper_repeat/sowod3-1/previous_log/sowod_distribution_sim1.pth'
+distributions = 'paper_repeat/sowod3-2/previous_log/sowod_distribution_sim1.pth'
 
 # yolo world setting
 num_classes = prev_intro_cls+cur_intro_cls
 num_training_classes = prev_intro_cls+cur_intro_cls
-max_epochs = 70  # Maximum training epochs
+max_epochs = 100  # Maximum training epochs
 close_mosaic_epochs = 10
 save_epoch_intervals = 1
 text_channels = 512
 neck_embed_channels = [128, 256, _base_.last_stage_out_channels // 2]
 neck_num_heads = [4, 8, _base_.last_stage_out_channels // 2 // 32]
-base_lr = 2e-4 / 4
-weight_decay = 0.03
+base_lr = 2e-3 / 4
+weight_decay = 0.05
 train_batch_size_per_gpu = 4
 load_from = None
 persistent_workers = False

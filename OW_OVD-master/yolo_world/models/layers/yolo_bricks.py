@@ -86,7 +86,7 @@ class MaxSigmoidAttnBlock(BaseModule):
             attn_weight = attn_weight.reshape(batch, m, height, width, n)
 
         attn_weight = attn_weight.max(dim=-1)[0]
-        attn_weight = attn_weight / (self.head_channels ** 0.5)
+        attn_weight = attn_weight / (self.head_channels**0.5)
         attn_weight = attn_weight + self.bias[None, :, None, None]
         attn_weight = attn_weight.sigmoid() * self.scale
 
@@ -163,7 +163,7 @@ class RepMatrixMaxSigmoidAttnBlock(BaseModule):
         attn_weight = attn_weight.reshape(batch, m, height, width, n)
 
         attn_weight = attn_weight.max(dim=-1)[0]
-        attn_weight = attn_weight / (self.head_channels ** 0.5)
+        attn_weight = attn_weight / (self.head_channels**0.5)
         attn_weight = attn_weight + self.bias[None, :, None, None]
         attn_weight = attn_weight.sigmoid()
 
@@ -240,7 +240,7 @@ class RepConvMaxSigmoidAttnBlock(BaseModule):
         # attn_weight = torch.stack(
         #     [conv(x) for conv, x in zip(self.guide_convs, embed)])
         # BxMxNxHxW -> BxMxHxW
-        attn_weight = attn_weight.max(dim=2)[0] / (self.head_channels ** 0.5)
+        attn_weight = attn_weight.max(dim=2)[0] / (self.head_channels**0.5)
         attn_weight = (attn_weight + self.bias.view(1, -1, 1, 1)).sigmoid()
         # .transpose(0, 1)
         # BxMx1xHxW
@@ -468,7 +468,7 @@ class ImagePoolingAttentionModule(nn.Module):
     def forward(self, text_features, image_features):
         B = image_features[0].shape[0]
         assert len(image_features) == self.num_feats
-        num_patches = self.pool_size ** 2
+        num_patches = self.pool_size**2
         mlvl_image_features = [
             pool(proj(x)).view(B, -1, num_patches)
             for (x, proj, pool
@@ -490,7 +490,7 @@ class ImagePoolingAttentionModule(nn.Module):
             k = k.permute(0, 2, 3, 1)
             attn_weight = torch.matmul(q, k)
 
-        attn_weight = attn_weight / (self.head_channels ** 0.5)
+        attn_weight = attn_weight / (self.head_channels**0.5)
         attn_weight = F.softmax(attn_weight, dim=-1)
         if self.use_einsum:
             x = torch.einsum('bmnk,bkmc->bnmc', attn_weight, v)
@@ -599,135 +599,3 @@ class EfficientCSPLayerWithTwoConv(CSPLayerWithTwoConv):
         x_main.extend(blocks(x_main[-1]) for blocks in self.blocks)
         x_main.append(self.attn_block(x_main[-1], guide))
         return self.final_conv(torch.cat(x_main, 1))
-
-
-# ================= 粘贴在 uav_pafpn.py 的 import 之后 =================
-import torch
-import torch.nn as nn
-from mmengine.model import BaseModule
-from mmcv.cnn import ConvModule
-from mmyolo.registry import MODELS
-
-
-@MODELS.register_module()
-class DarknetBottleneck(BaseModule):
-    """
-    DarknetBottleneck: YOLO 系列（v5/v8）中的基本残差块。
-    结构: 1x1 Conv -> 3x3 Conv
-    """
-
-    def __init__(self,
-                 in_channels: int,
-                 out_channels: int,
-                 expansion: float = 0.5,
-                 add_identity: bool = True,
-                 use_depthwise: bool = False,
-                 kernel_size: int = 3,
-                 norm_cfg=dict(type='BN', momentum=0.03, eps=0.001),
-                 act_cfg=dict(type='SiLU', inplace=True),
-                 init_cfg=None):
-        super().__init__(init_cfg)
-        hidden_channels = int(out_channels * expansion)
-
-        # 1x1 卷积用于调整通道 (Squeeze)
-        self.conv1 = ConvModule(
-            in_channels,
-            hidden_channels,
-            1,
-            norm_cfg=norm_cfg,
-            act_cfg=act_cfg)
-
-        # 3x3 卷积用于特征提取 (Excite/Process)
-        self.conv2 = ConvModule(
-            hidden_channels,
-            out_channels,
-            kernel_size,
-            stride=1,
-            padding=kernel_size // 2,
-            groups=hidden_channels if use_depthwise else 1,
-            norm_cfg=norm_cfg,
-            act_cfg=act_cfg)
-
-        self.add_identity = add_identity and in_channels == out_channels
-
-    def forward(self, x):
-        identity = x
-        out = self.conv1(x)
-        out = self.conv2(out)
-        if self.add_identity:
-            return out + identity
-        return out
-
-
-@MODELS.register_module()
-class CSPLayerWithTwoConv(BaseModule):
-    """
-    CSPLayerWithTwoConv (即 YOLOv8 的 C2f 模块)。
-    兼容接收 YOLO-World PAFPN 传入的额外文本引导参数。
-    """
-
-    def __init__(self,
-                 in_channels: int,
-                 out_channels: int,
-                 num_blocks: int = 1,
-                 add_identity: bool = True,
-                 expansion: float = 0.5,
-                 # ----- 兼容 YOLO-World 的多余参数 (占位符) -----
-                 guide_channels: int = None,
-                 embed_channels: int = None,
-                 num_heads: int = None,
-                 # ---------------------------------------------
-                 norm_cfg: dict = dict(type='BN', momentum=0.03, eps=0.001),
-                 act_cfg: dict = dict(type='SiLU', inplace=True),
-                 init_cfg=None):
-        super().__init__(init_cfg)
-        self.c = int(out_channels * expansion)
-
-        # 1x1 卷积，通道数翻倍（产生 split 的两部分）
-        self.cv1 = ConvModule(
-            in_channels,
-            2 * self.c,
-            1,
-            norm_cfg=norm_cfg,
-            act_cfg=act_cfg)
-
-        # 1x1 卷积，将所有分支拼接后降维
-        self.cv2 = ConvModule(
-            (2 + num_blocks) * self.c,
-            out_channels,
-            1,
-            norm_cfg=norm_cfg,
-            act_cfg=act_cfg)
-
-        # 连续的 Bottleneck
-        # 注意：这里我们设定 expansion=1.0，因为 C2f 外部已经把通道降下来了
-        # 如果这里再用 0.5，通道会变得太窄。YOLOv8 官方实现中 C2f 内部 Bottleneck 不再缩减通道。
-        self.m = nn.ModuleList([
-            DarknetBottleneck(
-                self.c,
-                self.c,
-                expansion=1.0,
-                add_identity=add_identity,
-                norm_cfg=norm_cfg,
-                act_cfg=act_cfg) for _ in range(num_blocks)
-        ])
-
-    def forward(self, x, txt_feats=None):
-        """
-        前向传播：
-        x: 图像特征
-        txt_feats: 文本特征 (这里默默接收，防止 YOLOWorldPAFPN 调用时因多传参数而报错)
-        """
-        # 将特征输入第一个卷积，并沿着通道维度分成两半
-        # chunk(2, 1) 表示在 dim=1 (channel) 上切成 2 份
-        y = list(self.cv1(x).chunk(2, 1))
-
-        # 将上一层的输出输入到下一个 bottleneck 中，并保存每一步的结果
-        # 这是 C2f 的核心特性：Cross Stage Partial
-        y.extend(m(y[-1]) for m in self.m)
-
-        # 沿着通道维度将所有特征块拼接，然后做最后的卷积映射
-        return self.cv2(torch.cat(y, 1))
-
-# ====================================================================
-# 下面是你原本的 SubpixelUpsample 和 UAVPAFPN 类代码...

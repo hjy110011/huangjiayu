@@ -11,6 +11,8 @@ from .mm_backbone import (
 from .uav_backbone import UAVBackbone
 from  .uav_a_backbone import UAVABackbone
 from .uav_b_backbone import UAVBBackbone
+from .yolo26_backbones import YOLO26Backbone
+from .uav_lck_backbone import UAVCBackbone
 __all__ = [
     'MultiModalYOLOBackbone',
     'HuggingVisionBackbone',
@@ -18,5 +20,7 @@ __all__ = [
     'PseudoLanguageBackbone',
     'UAVBackbone',
     'UAVABackbone',
-    'UAVBBackbone'
+    'UAVBBackbone',
+    'YOLO26Backbone',
+    'UAVCBackbone'
 ]
