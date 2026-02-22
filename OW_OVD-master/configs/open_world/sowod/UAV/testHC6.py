@@ -19,19 +19,18 @@ class_names = [
     'tricycle', 'awning-tricycle'
 ]
 
-# open world setting
 prev_intro_cls = 0
 cur_intro_cls = 14
-data_root = '/home/gdut-627/106G/public-dataset/OWOD/UAV-OWD/SOWOD_CLEAN/'
+data_root = '/kaggle/input/datasets/hjy111000/uav-owd/SOWOD_CLEAN/SOWOD_CLEAN'
 train_json = 'COCO_JSONB/instances_train_t1.json'
 test_json = 'COCO_JSONB/instances_test.json'
 # embedding_path = 'data/VOC2007/SOWOD/t1_gt_embeddings.npy'
 # att_embeddings = 'data/VOC2007/SOWOD/task_att_1_embeddings.pth'
 # embedding_path = 'data/VOC2007/SOWOD/fomo_image_net_t1.npy'
 # att_embeddings = None
-embedding_path = '/home/gdut-627/106G/public-dataset/OWOD/UAV-OWD/SOWOD_CLEAN/SOWOD_Split/t1_gt_embeddings.npy'
-att_embeddings = '/home/gdut-627/106G/public-dataset/OWOD/UAV-OWD/SOWOD_CLEAN/SOWOD_Split/task_att_1_embeddings.pth'
-class_text_path = f'/home/gdut-627/106G/public-dataset/OWOD/UAV-OWD/SOWOD_CLEAN/SOWOD_Split/texts/class_texts.json'
+embedding_path = '/kaggle/input/datasets/hjy111000/uav-owd/SOWOD_Split/SOWOD_Split/t1_gt_embeddings.npy'
+att_embeddings = '/kaggle/input/datasets/hjy111000/uav-owd/SOWOD_Split/SOWOD_Split/task_att_1_embeddings.pth'
+class_text_path = f'/kaggle/input/datasets/hjy111000/uav-owd/SOWOD_Split/SOWOD_Split/texts/class_texts.json'
 file_name = 'all.txt'
 pipline = [dict(type='att_select', log_start_epoch=1)]
 thr = 0.6
