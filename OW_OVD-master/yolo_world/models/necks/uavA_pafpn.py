@@ -1,25 +1,29 @@
-# type: uploadedfile
-# fileName: uav_pafpn.py
-# fullContent:
 # Copyright (c) Tencent Inc. All rights reserved.
 import copy
-from typing import List, Union
+from typing import List, Union, Optional
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch import Tensor
 from mmdet.utils import ConfigType, OptMultiConfig
 
 from mmyolo.registry import MODELS
 from mmyolo.models.utils import make_divisible, make_round
 from mmyolo.models.necks.yolov8_pafpn import YOLOv8PAFPN
-import torch.nn.functional as F
+
+
+def normal_init(module, mean=0, std=1, bias=0):
+    if hasattr(module, 'weight') and module.weight is not None:
+        nn.init.normal_(module.weight, mean, std)
+    if hasattr(module, 'bias') and module.bias is not None:
+        nn.init.constant_(module.bias, bias)
 
 
 class DySample(nn.Module):
     """
     DySample: Learning to Upsample by Learning to Sample (ICCV 2023)
-    超轻量级动态上采样，比 PixelShuffle 更适合小目标特征重建
+    官方完整实现：支持动态点采样，极其适合无人机小目标的高频细节恢复。
     """
 
     def __init__(self, in_channels, scale=2, style='lp', groups=4, dyscope=False):
@@ -27,40 +31,70 @@ class DySample(nn.Module):
         self.scale = scale
         self.style = style
         self.groups = groups
-        self.dyscope = dyscope
-        ds = in_channels // groups
-        if style == 'lp':
-            out_channels = 2 * groups * ds
+        assert style in ['lp', 'pl']
+        if style == 'pl':
+            assert in_channels >= scale ** 2 and in_channels % scale ** 2 == 0
+        assert in_channels >= groups and in_channels % groups == 0
+
+        if style == 'pl':
+            in_channels = in_channels // scale ** 2
+            out_channels = 2 * groups
         else:
-            out_channels = 2 * groups * ds + 2 * groups
+            out_channels = 2 * groups * scale ** 2
 
         self.offset = nn.Conv2d(in_channels, out_channels, 1)
-        self.scope = nn.Conv2d(in_channels, out_channels, 1) if dyscope else None
+        normal_init(self.offset, std=0.001)
 
-        # 初始化权重，使初始状态接近双线性插值
-        self._init_weights()
+        if dyscope:
+            self.scope = nn.Conv2d(in_channels, out_channels, 1)
+            normal_init(self.scope, val=0.)
 
-    def _init_weights(self):
-        nn.init.constant_(self.offset.weight, 0)
-        nn.init.constant_(self.offset.bias, 0)
-        if self.scope is not None:
-            nn.init.constant_(self.scope.weight, 0)
-            nn.init.constant_(self.scope.bias, 0)
+        self.register_buffer('init_pos', self._init_pos())
+
+    def _init_pos(self):
+        h = torch.arange((-self.scale + 1) / 2, (self.scale - 1) / 2 + 1) / self.scale
+        return torch.stack(torch.meshgrid([h, h], indexing='ij')).transpose(1, 2).repeat(1, self.groups, 1).reshape(1,
+                                                                                                                    -1,
+                                                                                                                    1,
+                                                                                                                    1)
+
+    def sample(self, x, offset):
+        B, _, H, W = offset.shape
+        offset = offset.view(B, 2, -1, H, W)
+
+        coords_h = torch.arange(H) + 0.5
+        coords_w = torch.arange(W) + 0.5
+        coords = torch.stack(torch.meshgrid([coords_w, coords_h], indexing='ij')).transpose(1, 2).unsqueeze(
+            1).unsqueeze(0).type(x.dtype).to(x.device)
+
+        normalizer = torch.tensor([W, H], dtype=x.dtype, device=x.device).view(1, 2, 1, 1, 1)
+        coords = 2 * (coords + offset) / normalizer - 1
+        coords = F.pixel_shuffle(coords.view(B, -1, H, W), self.scale).view(
+            B, 2, -1, self.scale * H, self.scale * W).permute(0, 2, 3, 4, 1).contiguous().flatten(0, 1)
+
+        return F.grid_sample(x.reshape(B * self.groups, -1, H, W), coords, mode='bilinear',
+                             align_corners=False, padding_mode="border").view(B, -1, self.scale * H, self.scale * W)
+
+    def forward_lp(self, x):
+        if hasattr(self, 'scope'):
+            offset = self.offset(x) * self.scope(x).sigmoid() * 0.5 + self.init_pos
+        else:
+            offset = self.offset(x) * 0.25 + self.init_pos
+        return self.sample(x, offset)
+
+    def forward_pl(self, x):
+        x_ = F.pixel_shuffle(x, self.scale)
+        if hasattr(self, 'scope'):
+            offset = F.pixel_unshuffle(self.offset(x_) * self.scope(x_).sigmoid(), self.scale) * 0.5 + self.init_pos
+        else:
+            offset = F.pixel_unshuffle(self.offset(x_), self.scale) * 0.25 + self.init_pos
+        return self.sample(x, offset)
 
     def forward(self, x):
-        # 简化版前向传播逻辑
-        B, C, H, W = x.shape
-        offset = self.offset(x)
-        # ... (完整 DySample 实现较长，可引用官方 OpenMMLab 实现)
-        # 简易替换逻辑：利用 offset 指导 grid_sample
-        # 这里仅展示核心思想，建议直接使用 pixel_shuffle 作为 fallback 或集成完整算子
-        return F.pixel_shuffle(offset, self.scale)  # 占位，实际需完整 DySample 逻辑
+        if self.style == 'pl':
+            return self.forward_pl(x)
+        return self.forward_lp(x)
 
-
-# 修改 UAVPAFPN 类
-# 将 self.upsample_layers.append(SubpixelUpsample(...))
-# 替换为:
-# self.upsample_layers.append(DySample(c_in, scale=2))
 
 class SubpixelUpsample(nn.Module):
     """
@@ -102,11 +136,10 @@ class UAVAPAFPN(YOLOv8PAFPN):
         if act_cfg is None:
             act_cfg = dict(type='SiLU', inplace=True)
         if norm_cfg is None:
-            norm_cfg = dict(type='BN',
-                            momentum=0.03,
-                            eps=0.001)
+            norm_cfg = dict(type='BN', momentum=0.03, eps=0.001)
         if block_cfg is None:
             block_cfg = dict(type='CSPLayerWithTwoConv')
+
         self.guide_channels = guide_channels
         self.embed_channels = embed_channels
         self.num_heads = num_heads
@@ -121,11 +154,10 @@ class UAVAPAFPN(YOLOv8PAFPN):
                          act_cfg=act_cfg,
                          init_cfg=init_cfg)
 
-        # [核心修改] 替换默认的 nn.Upsample 为 SubpixelUpsample
+        # 替换默认的 nn.Upsample 为 DySample
         self.upsample_layers = nn.ModuleList()
         for idx in range(len(in_channels) - 1):
             c_in = make_divisible(self.out_channels[len(in_channels) - 1 - idx], self.widen_factor)
-            # self.upsample_layers.append(SubpixelUpsample(c_in, scale_factor=2))
             self.upsample_layers.append(DySample(c_in, scale=2))
 
     def build_top_down_layer(self, idx: int) -> nn.Module:
@@ -133,17 +165,12 @@ class UAVAPAFPN(YOLOv8PAFPN):
         block_cfg = copy.deepcopy(self.block_cfg)
         block_cfg.update(
             dict(in_channels=make_divisible(
-                (self.in_channels[idx - 1] + self.in_channels[idx]),
-                self.widen_factor),
-                out_channels=make_divisible(self.out_channels[idx - 1],
-                                            self.widen_factor),
+                (self.in_channels[idx - 1] + self.in_channels[idx]), self.widen_factor),
+                out_channels=make_divisible(self.out_channels[idx - 1], self.widen_factor),
                 guide_channels=self.guide_channels,
-                embed_channels=make_round(self.embed_channels[idx - 1],
-                                          self.widen_factor),
-                num_heads=make_round(self.num_heads[idx - 1],
-                                     self.widen_factor),
-                num_blocks=make_round(self.num_csp_blocks,
-                                      self.deepen_factor),
+                embed_channels=make_round(self.embed_channels[idx - 1], self.widen_factor),
+                num_heads=make_round(self.num_heads[idx - 1], self.widen_factor),
+                num_blocks=make_round(self.num_csp_blocks, self.deepen_factor),
                 add_identity=False,
                 norm_cfg=self.norm_cfg,
                 act_cfg=self.act_cfg))
@@ -154,23 +181,18 @@ class UAVAPAFPN(YOLOv8PAFPN):
         block_cfg = copy.deepcopy(self.block_cfg)
         block_cfg.update(
             dict(in_channels=make_divisible(
-                (self.out_channels[idx] + self.out_channels[idx + 1]),
-                self.widen_factor),
-                out_channels=make_divisible(self.out_channels[idx + 1],
-                                            self.widen_factor),
+                (self.out_channels[idx] + self.out_channels[idx + 1]), self.widen_factor),
+                out_channels=make_divisible(self.out_channels[idx + 1], self.widen_factor),
                 guide_channels=self.guide_channels,
-                embed_channels=make_round(self.embed_channels[idx + 1],
-                                          self.widen_factor),
-                num_heads=make_round(self.num_heads[idx + 1],
-                                     self.widen_factor),
-                num_blocks=make_round(self.num_csp_blocks,
-                                      self.deepen_factor),
+                embed_channels=make_round(self.embed_channels[idx + 1], self.widen_factor),
+                num_heads=make_round(self.num_heads[idx + 1], self.widen_factor),
+                num_blocks=make_round(self.num_csp_blocks, self.deepen_factor),
                 add_identity=False,
                 norm_cfg=self.norm_cfg,
                 act_cfg=self.act_cfg))
         return MODELS.build(block_cfg)
 
-    def forward(self, img_feats: List[Tensor], txt_feats: Tensor = None) -> tuple:
+    def forward(self, img_feats: List[Tensor], txt_feats: Optional[Tensor] = None) -> tuple:
         """Forward function.
         including multi-level image features, text features: BxLxD
         """
@@ -186,7 +208,7 @@ class UAVAPAFPN(YOLOv8PAFPN):
             feat_high = inner_outs[0]
             feat_low = reduce_outs[idx - 1]
 
-            # 使用 SubpixelUpsample
+            # 使用 DySample
             upsample_feat = self.upsample_layers[len(self.in_channels) - 1 - idx](feat_high)
 
             if self.upsample_feats_cat_first:
@@ -216,7 +238,7 @@ class UAVAPAFPN(YOLOv8PAFPN):
 
 
 @MODELS.register_module()
-class UAVDualPAFPN(UAVPAFPN):
+class UAVADualPAFPN(YOLOv8PAFPN):
     """Path Aggregation Network used in YOLO World v8."""
 
     def __init__(self,
@@ -251,11 +273,10 @@ class UAVDualPAFPN(UAVPAFPN):
         if act_cfg is None:
             act_cfg = dict(type='SiLU', inplace=True)
         if norm_cfg is None:
-            norm_cfg = dict(type='BN',
-                            momentum=0.03,
-                            eps=0.001)
+            norm_cfg = dict(type='BN', momentum=0.03, eps=0.001)
         if block_cfg is None:
             block_cfg = dict(type='CSPLayerWithTwoConv')
+
         if text_enhancder is None:
             text_enhancder = dict(
                 type='ImagePoolingAttentionModule',
@@ -271,14 +292,13 @@ class UAVDualPAFPN(UAVPAFPN):
         print(text_enhancder)
         self.text_enhancer = MODELS.build(text_enhancder)
 
-        # DualPAFPN 也需要替换上采样层
+        # 统一使用 DySample，防止使用 SubpixelUpsample 时产生的棋盘效应
         self.upsample_layers = nn.ModuleList()
         for idx in range(len(in_channels) - 1):
             c_in = make_divisible(self.out_channels[len(in_channels) - 1 - idx], self.widen_factor)
-            self.upsample_layers.append(SubpixelUpsample(c_in, scale_factor=2))
+            self.upsample_layers.append(DySample(c_in, scale=2))
 
-    # [修复] 增加 = None 默认值，与父类签名保持一致
-    def forward(self, img_feats: List[Tensor], txt_feats: Tensor = None) -> tuple:
+    def forward(self, img_feats: List[Tensor], txt_feats: Optional[Tensor] = None) -> tuple:
         """Forward function."""
         assert len(img_feats) == len(self.in_channels)
         # reduce layers
@@ -292,7 +312,7 @@ class UAVDualPAFPN(UAVPAFPN):
             feat_high = inner_outs[0]
             feat_low = reduce_outs[idx - 1]
 
-            # 使用 SubpixelUpsample
+            # 使用 DySample
             upsample_feat = self.upsample_layers[len(self.in_channels) - 1 - idx](feat_high)
 
             if self.upsample_feats_cat_first:
@@ -303,8 +323,7 @@ class UAVDualPAFPN(UAVPAFPN):
                 top_down_layer_inputs, txt_feats)
             inner_outs.insert(0, inner_out)
 
-        # 如果 txt_feats 为 None，这里可能会出错，但为了满足签名一致性我们允许 None。
-        # 实际上调用时应该保证有 txt_feats，或者在此处做 None 检查。
+        # 安全处理 txt_feats
         if txt_feats is not None:
             txt_feats = self.text_enhancer(txt_feats, inner_outs)
 

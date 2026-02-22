@@ -308,8 +308,6 @@ class UavCHead(YOLOv8Head):
                      batch_gt_instances_ignore=None, epoch_info=None):
 
         num_imgs = len(batch_img_metas)
-        # ... [省略 Priors 生成代码，与原版一致] ...
-        # (此处为了简洁省略，请复制原文件中的 priors 生成部分)
         current_featmap_sizes = [cls_score.shape[2:] for cls_score in cls_scores]
         if current_featmap_sizes != self.featmap_sizes_train:
             self.featmap_sizes_train = current_featmap_sizes
@@ -321,6 +319,7 @@ class UavCHead(YOLOv8Head):
             self.num_level_priors = [len(n) for n in mlvl_priors_with_stride]
             self.flatten_priors_train = torch.cat(mlvl_priors_with_stride, dim=0)
             self.stride_tensor = self.flatten_priors_train[..., [2]]
+
 
         # GT Preprocess
         gt_info = gt_instances_preprocess(batch_gt_instances, num_imgs)
@@ -361,7 +360,7 @@ class UavCHead(YOLOv8Head):
                 self.class_sample_ema.mul_(self.class_ema_momentum)
                 self.class_sample_ema.add_((1.0 - self.class_ema_momentum) * batch_class_count)
 
-                beta = 0.999
+                beta = 0.95
                 term = torch.pow(beta, self.class_sample_ema)
                 effective_num = (1.0 - term).clamp(min=1e-4)
                 class_weights = (1.0 - beta) / effective_num
