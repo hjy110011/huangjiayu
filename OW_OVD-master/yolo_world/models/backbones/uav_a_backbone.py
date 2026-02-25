@@ -110,7 +110,7 @@ class UAVABackbone(BaseModule):
                  frozen_stages: int = -1,
                  with_text_model: bool = True,
                  init_cfg: OptMultiConfig = None,
-                 feat_channels=[256, 512, 1024]) -> None:  # Adjusted channels usually resemble this
+                 feat_channels=[256, 512, 512]) -> None:  # Adjusted channels usually resemble this
         super().__init__(init_cfg)
         self.with_text_model = with_text_model
 
