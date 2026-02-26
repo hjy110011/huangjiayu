@@ -5,6 +5,6 @@ from .UMB import UMB
 from .FOMOnoBN import FOMOnoBN
 from .Our import OurDetector
 from .UAV import UAVDetector
-
+from .UAVB import UAVBDetector
 __all__ = ['YOLOWorldDetector', 'SimpleYOLOWorldDetector', 
-           'FOMO', 'UMB', 'FOMOnoBN', 'OurDetector','UAVDetector']
+           'FOMO', 'UMB', 'FOMOnoBN', 'OurDetector','UAVDetector', 'UAVBDetector']
