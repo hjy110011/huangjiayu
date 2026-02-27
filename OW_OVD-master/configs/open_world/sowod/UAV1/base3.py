@@ -46,8 +46,8 @@ distributions = 'paper_repeat/sowodq111/previous_log/sowod_distribution_sim1.pth
 # yolo world setting
 num_classes = prev_intro_cls+cur_intro_cls
 num_training_classes = prev_intro_cls+cur_intro_cls
-max_epochs = 100  # Maximum training epochs
-close_mosaic_epochs = 50
+max_epochs = 70  # Maximum training epochs
+close_mosaic_epochs = 20
 save_epoch_intervals = 1
 text_channels = 512
 neck_embed_channels = [128, 256, _base_.last_stage_out_channels // 2]
