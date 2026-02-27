@@ -39,9 +39,9 @@ class UavDHead(YOLOv8Head):
 
                  # --- 核心模块超参数 ---
                  nwd_factor: float = 1.0,
-                 nwd_constant: float = 12.8,
-                 inner_ratio: float = 0.85,
-                 tau_scale: float = 900,
+                 nwd_constant: float = 36.9,
+                 inner_ratio: float = 0.75,
+                 tau_scale: float = 656,
                  wiou_alpha: float = 1.9,
                  wiou_delta: float = 3.0,
 
