@@ -59,7 +59,7 @@ load_from = None
 persistent_workers = False
 
 # model settings
-model = dict(type='OurDetector',
+model = dict(type='UAVDetector',
              mm_neck=True,
              num_train_classes=num_training_classes,
              num_test_classes=num_classes,
@@ -69,7 +69,7 @@ model = dict(type='OurDetector',
              pipline=pipline,
              data_preprocessor=dict(type='YOLOv5DetDataPreprocessor'),
              backbone=dict(_delete_=True,
-                           type='UAVBFBackbone',
+                           type='MultiModalYOLOBackbone',
                            text_model=None,
                            image_model={{_base_.model.backbone}},
                            frozen_stages=-1,

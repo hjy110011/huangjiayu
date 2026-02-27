@@ -159,7 +159,7 @@ class UAVBFBackbone(BaseModule):
                  frozen_stages: int = -1,
                  with_text_model: bool = True,
                  init_cfg: OptMultiConfig = None,
-                 feat_channels=[256, 512, 1024],
+                 feat_channels=[256, 512, 512],
                  use_wavelet: bool = True,
                  use_wavelet_residual: bool = True) -> None:
         super().__init__(init_cfg)
