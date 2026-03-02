@@ -135,7 +135,7 @@ default_hooks = dict(
     logger=dict(interval=50, type='LoggerHook'),
     param_scheduler=dict(
         lr_factor=0.01,
-        max_epochs=500,
+        max_epochs=max_epochs,
         scheduler_type='linear',
         type='YOLOv5ParamSchedulerHook'),
     sampler_seed=dict(type='DistSamplerSeedHook'),
