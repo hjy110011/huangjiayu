@@ -95,7 +95,6 @@ model = dict(type='OurDetector',
                             top_k=top_k,
                             head_module=dict(
                                 type='UAVDynamicHeadModule',
-                                freeze_all=False,
                                 use_bn_head=True,
                                 embed_dims=text_channels,
                                 num_classes=num_training_classes)),
