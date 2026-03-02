@@ -10,6 +10,7 @@ from .uav_a_head import UavAHead
 from .uav_b_head import UavBHead
 from .uav_c_head import UavCHead
 from .uav_d_head import UavDHead
+from .uav_head_module import UAVDynamicHeadModule
 __all__ = [
     'YOLOWorldHead', 'YOLOWorldHeadModule', 'YOLOWorldSegHead',
     'YOLOWorldSegHeadModule', 'RepYOLOWorldHeadModule',

@@ -80,12 +80,19 @@ class WaveletAttention(nn.Module):
             nn.Sigmoid()
         )
 
+        # 【修复2】：将最后的卷积层权重初始化为 0。
+        # 这样初始时 Sigmoid 必定输出 0.5，对原特征是一种温和的缩放，避免“休克”。
+        nn.init.constant_(self.hf_attn[3].weight, 0)
+
     def forward(self, x):
+        # 【修复3】：提升数值稳定性，防止 FP16（混合精度）下的差分计算出现 NaN
+        x_float = x.float()
+
         # 1. DWT 高效切片
-        x00 = x[:, :, 0::2, 0::2]
-        x01 = x[:, :, 0::2, 1::2]
-        x10 = x[:, :, 1::2, 0::2]
-        x11 = x[:, :, 1::2, 1::2]
+        x00 = x_float[:, :, 0::2, 0::2]
+        x01 = x_float[:, :, 0::2, 1::2]
+        x10 = x_float[:, :, 1::2, 0::2]
+        x11 = x_float[:, :, 1::2, 1::2]
 
         # 2. 提取三个高频分量
         HL = (x00 - x01 + x10 - x11) / 2.0  # 垂直高频
@@ -94,11 +101,14 @@ class WaveletAttention(nn.Module):
 
         # 3. 计算高频注意力权重
         hf_concat = torch.cat([HL, LH, HH], dim=1)
+        hf_concat = hf_concat.to(x.dtype)  # 还原回原来的数据类型(FP16/FP32)
         hf_weight = self.hf_attn(hf_concat)
 
         # 4. 上采样对齐原图分辨率
         hf_weight_up = F.interpolate(hf_weight, size=x.shape[2:], mode='bilinear', align_corners=False)
-        return hf_weight_up
+
+        # 防止极端 0 值的出现
+        return torch.clamp(hf_weight_up, min=1e-4, max=1.0 - 1e-4)
 
 
 # ---------------------------------------------------------------
@@ -129,20 +139,25 @@ class WaveletHybridContextBlock(BaseModule):
     def forward(self, img_feats):
         new_feats = []
         for i, feat in enumerate(img_feats):
-            # 1. 基础空间/语义调制
-            enhanced_feat = self.spatial_attentions[i](feat)
+            # 1. 基础空间/语义调制 (乘法缩放)
+            att_feat = self.spatial_attentions[i](feat)
 
-            # 2. 小波高频叠加 (仅针对浅层且开启小波时)
+            # 2. 小波高频叠加
             wavelet_module = self.wavelet_attentions[i]
             if wavelet_module is not None:
-                # 提取原图的高频权重
+                # 依然从原始特征 feat 提取高频权重，保证纯净
                 hf_weight = wavelet_module(feat)
                 if self.use_wavelet_residual:
                     # 残差模式：安全增强
-                    enhanced_feat = enhanced_feat * (1.0 + hf_weight)
+                    att_feat = att_feat * (1.0 + hf_weight)
                 else:
                     # 激进模式：直接相乘
-                    enhanced_feat = enhanced_feat * hf_weight
+                    att_feat = att_feat * hf_weight
+
+            # 3. 【修复1 最核心】：全局加法残差！
+            # 无论前面注意力机制如何缩放特征，最终将提取出的增强特征“加”回原特征，
+            # 确保信息流通道永远畅通，防止“注意力坍塌”导致 mAP 断崖下跌。
+            enhanced_feat = feat + att_feat
 
             new_feats.append(enhanced_feat)
         return tuple(new_feats)
@@ -152,7 +167,7 @@ class WaveletHybridContextBlock(BaseModule):
 # 5. 最终的主干网络
 # ---------------------------------------------------------------
 @MODELS.register_module()
-class UAVBFBackbone(BaseModule):
+class UAVFBackbone(BaseModule):
     def __init__(self,
                  image_model: ConfigType,
                  text_model: ConfigType,
@@ -174,7 +189,7 @@ class UAVBFBackbone(BaseModule):
         self.frozen_stages = frozen_stages
         self._freeze_stages()
 
-        # [核心替换] 引入自带小波的高级混合模块
+        # 引入自带小波的高级混合模块
         self.context_module = WaveletHybridContextBlock(
             in_channels_list=feat_channels,
             use_wavelet=use_wavelet,

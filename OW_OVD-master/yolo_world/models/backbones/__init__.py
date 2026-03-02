@@ -14,7 +14,8 @@ from .uav_b_backbone import UAVBBackbone
 from .yolo26_backbones import YOLO26Backbone
 from .uav_lck_backbone import UAVCBackbone
 from .uav_lck_wavelet_backbone import UAVDBackbone
-from .uav_f_backbone import UAVBFBackbone
+from .uav_f_backbone import UAVFBackbone
+from .uav_g_backbone import UAVGBackbone
 __all__ = [
     'MultiModalYOLOBackbone',
     'HuggingVisionBackbone',
@@ -26,5 +27,6 @@ __all__ = [
     'YOLO26Backbone',
     'UAVCBackbone',
     'UAVDBackbone',
-    'UAVBFBackbone'
+    'UAVFBackbone',
+    'UAVGBackbone'
 ]
