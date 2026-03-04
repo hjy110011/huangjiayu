@@ -200,4 +200,5 @@ class UAVDynamicHeadModule(BaseModule):
                 cls_scores.append(cls_vision_feat)
 
         # 返回 4 个参数的元组，完美适配 UavDHead 外层的需求
-        return tuple(cls_scores), tuple(bbox_preds), tuple(bbox_dist_preds), None
+        # 移除多余的 None 占位符，严格返回 3 个元素以对齐 loss_by_feat 的解包顺序
+        return tuple(cls_scores), tuple(bbox_preds), tuple(bbox_dist_preds)
